@@ -4,6 +4,150 @@ import React from 'react'
 
 // SolidWorks风格赛道设计器 - 增强版
 export default function Home() {
+  // 缩略图拖拽视口框相关状态
+  const [draggingMini, setDraggingMini] = React.useState(false);
+  const miniDragOffset = React.useRef({ x: 0, y: 0 });
+  // 缩略图常量（全局唯一）
+  const miniWidth = 300;
+  const miniHeight = 150;
+  const designX = -2000;
+  const designY = -1000;
+  const designW = 4000;
+  const designH = 2000;
+  const scaleX = miniWidth / designW;
+  const scaleY = miniHeight / designH;
+
+  // 缩略图拖拽事件处理
+  const handleMiniMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setDraggingMini(true);
+    // 记录鼠标在红框内的偏移
+    const startX = e.nativeEvent.offsetX;
+    const startY = e.nativeEvent.offsetY;
+    const rectX = (viewBox.x - designX) * scaleX;
+    const rectY = (viewBox.y - designY) * scaleY;
+    miniDragOffset.current = {
+      x: startX - rectX,
+      y: startY - rectY
+    };
+    e.stopPropagation();
+  };
+  const handleMiniMouseMove = (e: React.MouseEvent) => {
+    if (!draggingMini) return;
+    const mouseX = e.nativeEvent.offsetX;
+    const mouseY = e.nativeEvent.offsetY;
+    const rectW = viewBox.width * scaleX;
+    const rectH = viewBox.height * scaleY;
+    let newRectX = mouseX - miniDragOffset.current.x;
+    let newRectY = mouseY - miniDragOffset.current.y;
+    newRectX = Math.max(0, Math.min(miniWidth - rectW, newRectX));
+    newRectY = Math.max(0, Math.min(miniHeight - rectH, newRectY));
+    const newViewBoxX = designX + newRectX / scaleX;
+    const newViewBoxY = designY + newRectY / scaleY;
+    setViewBox({ ...viewBox, x: newViewBoxX, y: newViewBoxY });
+  };
+  const handleMiniMouseUp = () => {
+    setDraggingMini(false);
+  };
+
+  // 缩略图渲染函数
+
+  function renderMiniMap(props?: {
+    onMiniMouseDown?: (e: React.MouseEvent) => void;
+    onMiniMouseMove?: (e: React.MouseEvent) => void;
+    onMiniMouseUp?: (e: React.MouseEvent) => void;
+  }) {
+    // 视口框位置和尺寸直接用Home作用域变量（已声明）
+  const rectX = (viewBox.x - designX) * scaleX;
+  const rectY = (viewBox.y - designY) * scaleY;
+  const rectW = viewBox.width * scaleX;
+  const rectH = viewBox.height * scaleY;
+    // 事件绑定：SVG级别
+        return (
+          <svg
+            width={miniWidth}
+            height={miniHeight}
+            viewBox={`0 0 ${miniWidth} ${miniHeight}`}
+            style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 6, cursor: draggingMini ? 'grabbing' : 'pointer' }}
+            onMouseMove={props?.onMiniMouseMove}
+            onMouseUp={props?.onMiniMouseUp}
+            onMouseLeave={props?.onMiniMouseUp}
+            onMouseDown={props?.onMiniMouseDown}
+          >
+            {/* 赛道渲染，需将赛道坐标映射到缩略图坐标 */}
+            {pieces.map((piece) => {
+              if (piece.type === 'straight') {
+                const x1 = (piece.x - designX) * scaleX;
+                const y1 = (piece.y - designY) * scaleY;
+                const x2 = (piece.x + piece.params.length * Math.cos((piece.rotation || 0) * Math.PI / 180) - designX) * scaleX;
+                const y2 = (piece.y + piece.params.length * Math.sin((piece.rotation || 0) * Math.PI / 180) - designY) * scaleY;
+                return <line key={piece.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#6366f1" strokeWidth={4} strokeLinecap="round" />;
+              } else if (piece.type === 'curve') {
+                const r = piece.params.radius * 2;
+                const angle = piece.params.angle;
+                const rot = (piece.rotation || 0) * Math.PI / 180;
+                const cx = (piece.x - designX) * scaleX;
+                const cy = (piece.y - designY) * scaleY;
+                const startAngle = rot;
+                const endAngle = rot + angle * Math.PI / 180;
+                const x1 = cx + r * Math.cos(startAngle) * scaleX;
+                const y1 = cy + r * Math.sin(startAngle) * scaleY;
+                const x2 = cx + r * Math.cos(endAngle) * scaleX;
+                const y2 = cy + r * Math.sin(endAngle) * scaleY;
+                const largeArc = angle > 180 ? 1 : 0;
+                const d = `M${x1},${y1} A${r*scaleX},${r*scaleY} 0 ${largeArc} 1 ${x2},${y2}`;
+                return <path key={piece.id} d={d} stroke="#f59e42" strokeWidth={4} fill="none" />;
+              }
+              return null;
+            })}
+            {/* 当前视口区域框，可拖拽 */}
+            <rect
+              x={rectX}
+              y={rectY}
+              width={rectW}
+              height={rectH}
+              fill="none"
+              stroke="#ef4444"
+              strokeWidth={2.5}
+              strokeDasharray="6,3"
+              rx={3}
+              style={{ cursor: 'grab', pointerEvents: 'all' }}
+            />
+          </svg>
+        );
+  // 缩略图拖拽事件处理
+  const handleMiniMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setDraggingMini(true);
+    // 记录鼠标在红框内的偏移
+    const startX = e.nativeEvent.offsetX;
+    const startY = e.nativeEvent.offsetY;
+    const rectX = (viewBox.x - designX) * scaleX;
+    const rectY = (viewBox.y - designY) * scaleY;
+    miniDragOffset.current = {
+      x: startX - rectX,
+      y: startY - rectY
+    };
+    e.stopPropagation();
+  };
+  const handleMiniMouseMove = (e: React.MouseEvent) => {
+    if (!draggingMini) return;
+    const mouseX = e.nativeEvent.offsetX;
+    const mouseY = e.nativeEvent.offsetY;
+    let newRectX = mouseX - miniDragOffset.current.x;
+    let newRectY = mouseY - miniDragOffset.current.y;
+    const rectW = viewBox.width * scaleX;
+    const rectH = viewBox.height * scaleY;
+    newRectX = Math.max(0, Math.min(miniWidth - rectW, newRectX));
+    newRectY = Math.max(0, Math.min(miniHeight - rectH, newRectY));
+    const newViewBoxX = designX + newRectX / scaleX;
+    const newViewBoxY = designY + newRectY / scaleY;
+    setViewBox({ ...viewBox, x: newViewBoxX, y: newViewBoxY });
+  };
+  const handleMiniMouseUp = () => {
+    setDraggingMini(false);
+  };
+  }
   const [pieces, setPieces] = React.useState<any[]>([])
   const [viewBox, setViewBox] = React.useState({ 
     x: -2000, // 扩大视图范围，确保16M×8M区域完全可见
@@ -12,6 +156,11 @@ export default function Home() {
     height: 2000 // 10M高度（8M+2M边距）
   })
   const [scale, setScale] = React.useState(1.0)
+  // 缩放比例上下限
+  const MIN_SCALE = 0.18
+  const MAX_SCALE = 2.5
+  // 设计画布边界（与resetView一致）
+  const CANVAS_BOUNDS = { x: -2000, y: -1000, width: 4000, height: 2000 }
   const [selectedId, setSelectedId] = React.useState<number | null>(null)
   const [selectedIds, setSelectedIds] = React.useState<number[]>([]) // 多选
   const [isSelecting, setIsSelecting] = React.useState(false) // 框选状态
@@ -191,47 +340,10 @@ export default function Home() {
         return
       }
     }
-    setPieces([])
-    setCurrentArchiveName('未命名项目')
-    setSelectedId(null)
-    setSelectedIds([])
-    resetView() // 重置视图
-    setStatusMessage('已新建项目')
-    setTimeout(() => setStatusMessage(''), 3000)
-  }
-
-  // 智能赛道识别和生成
-  const parseTrackCode = (code: string) => {
-    const normalized = code.trim().toUpperCase()
-    
-    // 识别直道: L + 数字 (如 L88, L200)
-    const straightMatch = normalized.match(/^L(\d+)$/)
-    if (straightMatch) {
-      const length = parseInt(straightMatch[1])
-      return {
-        type: 'straight' as const,
-        params: { length }
-      }
-    }
-    
-    // 识别弯道: R + 半径 + A + 角度 (如 R200A90, R150A45)
-    const curveMatch = normalized.match(/^R(\d+)A(\d+)$/)
-    if (curveMatch) {
-      const radius = parseInt(curveMatch[1])
-      const angle = parseInt(curveMatch[2])
-      return {
-        type: 'curve' as const,
-        params: { radius, angle }
-      }
-    }
-    
-    // 识别常用弯道简写
-    const commonCurves: Record<string, {radius: number, angle: number}> = {
-      'R90': { radius: 200, angle: 90 },
-      'R45': { radius: 200, angle: 45 },
-      'R30': { radius: 200, angle: 30 },
+    // ...existing code...
+    const commonCurves = {
       'R180': { radius: 200, angle: 180 }
-    }
+    };
     
     if (commonCurves[normalized]) {
       return {
@@ -719,19 +831,31 @@ export default function Home() {
   // 平滑缩放 - 限制最大视图为16M×8M，最小200×100，增强流畅性
   const handleZoom = (delta: number, centerX?: number, centerY?: number) => {
     const zoomFactor = delta > 0 ? 1.15 : 0.85 // 优化缩放步长，更流畅
-    // 扩大缩放范围：最大显示20M×10M，最小200×100
+    // 计算缩放后的宽高
     const newWidth = Math.max(150, Math.min(8000, viewBox.width * zoomFactor))
     const newHeight = Math.max(75, Math.min(4000, viewBox.height * zoomFactor))
-    
-    // 以指定点为中心缩放
-    const centerViewX = centerX !== undefined ? centerX : viewBox.x + viewBox.width / 2
-    const centerViewY = centerY !== undefined ? centerY : viewBox.y + viewBox.height / 2
-    
-    const newX = centerViewX - newWidth / 2
-    const newY = centerViewY - newHeight / 2
-    
-    setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight })
-    setScale(1000 / newWidth)
+    // 计算缩放后的 scale
+    const newScale = 1000 / newWidth
+    // 限制 scale 在上下限范围内
+    if (newScale < MIN_SCALE || newScale > MAX_SCALE) {
+      return // 超出缩放范围则不缩放
+    }
+  // 以指定点为中心缩放
+  const centerViewX = centerX !== undefined ? centerX : viewBox.x + viewBox.width / 2
+  const centerViewY = centerY !== undefined ? centerY : viewBox.y + viewBox.height / 2
+  let newX = centerViewX - newWidth / 2
+  let newY = centerViewY - newHeight / 2
+
+  // 边界限制：缩放后画布不能超出设计区域
+  // 限制左上角
+  if (newX < CANVAS_BOUNDS.x) newX = CANVAS_BOUNDS.x
+  if (newY < CANVAS_BOUNDS.y) newY = CANVAS_BOUNDS.y
+  // 限制右下角
+  if (newX + newWidth > CANVAS_BOUNDS.x + CANVAS_BOUNDS.width) newX = CANVAS_BOUNDS.x + CANVAS_BOUNDS.width - newWidth
+  if (newY + newHeight > CANVAS_BOUNDS.y + CANVAS_BOUNDS.height) newY = CANVAS_BOUNDS.y + CANVAS_BOUNDS.height - newHeight
+
+  setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight })
+  setScale(newScale)
   }
 
   // 滚轮缩放
@@ -1059,7 +1183,8 @@ export default function Home() {
       height: '100vh', 
       display: 'flex', 
       flexDirection: 'column',
-      fontFamily: 'Arial, sans-serif'
+      fontFamily: 'Arial, sans-serif',
+      position: 'relative'
     }
   }, [
     // 工具栏
@@ -1126,6 +1251,32 @@ export default function Home() {
           }, '实验室内部专用工具')
         ])
       ]),
+    // 右下角悬浮缩略图
+    React.createElement('div', {
+      key: 'mini-map',
+      style: {
+        position: 'fixed',
+        right: 20,
+        bottom: 20,
+        zIndex: 1000,
+        background: 'rgba(255,255,255,0.95)',
+        borderRadius: 8,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+        padding: 8,
+        border: '1px solid #e5e7eb',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 190,
+        minHeight: 100
+      }
+    }, [
+      renderMiniMap({
+        onMiniMouseDown: handleMiniMouseDown,
+        onMiniMouseMove: handleMiniMouseMove,
+        onMiniMouseUp: handleMiniMouseUp,
+      })
+    ]),
       
       React.createElement('h1', {
         key: 'old-title',
