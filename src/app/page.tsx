@@ -1088,7 +1088,7 @@ export default function Home() {
       }, [
         React.createElement('img', {
           key: 'logo',
-          src: '/lab-logo.png',
+          src: process.env.NODE_ENV === 'production' ? '/ASC_saidao/lab-logo.png' : '/lab-logo.png',
           alt: 'ASC实验室',
           style: {
             width: '48px',
