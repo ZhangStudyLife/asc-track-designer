@@ -4,39 +4,149 @@ import React from 'react'
 
 // SolidWorks风格赛道设计器 - 增强版
 export default function Home() {
-  // 缩略图渲染函数
-  function renderMiniMap() {
+  // 缩略图拖拽视口框相关状态
+  const [draggingMini, setDraggingMini] = React.useState(false);
+  const miniDragOffset = React.useRef({ x: 0, y: 0 });
+  // 缩略图常量（全局唯一）
   const miniWidth = 300;
   const miniHeight = 150;
-    return (
-      <svg width={miniWidth} height={miniHeight} viewBox="-2000 -1000 4000 2000" style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 6 }}>
-        {pieces.map((piece) => {
-          if (piece.type === 'straight') {
-            const x1 = piece.x;
-            const y1 = piece.y;
-            const x2 = piece.x + piece.params.length * Math.cos((piece.rotation || 0) * Math.PI / 180);
-            const y2 = piece.y + piece.params.length * Math.sin((piece.rotation || 0) * Math.PI / 180);
-            return <line key={piece.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#6366f1" strokeWidth={18} strokeLinecap="round" />;
-          } else if (piece.type === 'curve') {
-            const r = piece.params.radius * 2;
-            const angle = piece.params.angle;
-            const rot = (piece.rotation || 0) * Math.PI / 180;
-            const cx = piece.x;
-            const cy = piece.y;
-            const startAngle = rot;
-            const endAngle = rot + angle * Math.PI / 180;
-            const x1 = cx + r * Math.cos(startAngle);
-            const y1 = cy + r * Math.sin(startAngle);
-            const x2 = cx + r * Math.cos(endAngle);
-            const y2 = cy + r * Math.sin(endAngle);
-            const largeArc = angle > 180 ? 1 : 0;
-            const d = `M${x1},${y1} A${r},${r} 0 ${largeArc} 1 ${x2},${y2}`;
-            return <path key={piece.id} d={d} stroke="#f59e42" strokeWidth={18} fill="none" />;
-          }
-          return null;
-        })}
-      </svg>
-    );
+  const designX = -2000;
+  const designY = -1000;
+  const designW = 4000;
+  const designH = 2000;
+  const scaleX = miniWidth / designW;
+  const scaleY = miniHeight / designH;
+
+  // 缩略图拖拽事件处理
+  const handleMiniMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setDraggingMini(true);
+    // 记录鼠标在红框内的偏移
+    const startX = e.nativeEvent.offsetX;
+    const startY = e.nativeEvent.offsetY;
+    const rectX = (viewBox.x - designX) * scaleX;
+    const rectY = (viewBox.y - designY) * scaleY;
+    miniDragOffset.current = {
+      x: startX - rectX,
+      y: startY - rectY
+    };
+    e.stopPropagation();
+  };
+  const handleMiniMouseMove = (e: React.MouseEvent) => {
+    if (!draggingMini) return;
+    const mouseX = e.nativeEvent.offsetX;
+    const mouseY = e.nativeEvent.offsetY;
+    const rectW = viewBox.width * scaleX;
+    const rectH = viewBox.height * scaleY;
+    let newRectX = mouseX - miniDragOffset.current.x;
+    let newRectY = mouseY - miniDragOffset.current.y;
+    newRectX = Math.max(0, Math.min(miniWidth - rectW, newRectX));
+    newRectY = Math.max(0, Math.min(miniHeight - rectH, newRectY));
+    const newViewBoxX = designX + newRectX / scaleX;
+    const newViewBoxY = designY + newRectY / scaleY;
+    setViewBox({ ...viewBox, x: newViewBoxX, y: newViewBoxY });
+  };
+  const handleMiniMouseUp = () => {
+    setDraggingMini(false);
+  };
+
+  // 缩略图渲染函数
+
+  function renderMiniMap(props?: {
+    onMiniMouseDown?: (e: React.MouseEvent) => void;
+    onMiniMouseMove?: (e: React.MouseEvent) => void;
+    onMiniMouseUp?: (e: React.MouseEvent) => void;
+  }) {
+    // 视口框位置和尺寸直接用Home作用域变量（已声明）
+  const rectX = (viewBox.x - designX) * scaleX;
+  const rectY = (viewBox.y - designY) * scaleY;
+  const rectW = viewBox.width * scaleX;
+  const rectH = viewBox.height * scaleY;
+    // 事件绑定：SVG级别
+        return (
+          <svg
+            width={miniWidth}
+            height={miniHeight}
+            viewBox={`0 0 ${miniWidth} ${miniHeight}`}
+            style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 6, cursor: draggingMini ? 'grabbing' : 'pointer' }}
+            onMouseMove={props?.onMiniMouseMove}
+            onMouseUp={props?.onMiniMouseUp}
+            onMouseLeave={props?.onMiniMouseUp}
+            onMouseDown={props?.onMiniMouseDown}
+          >
+            {/* 赛道渲染，需将赛道坐标映射到缩略图坐标 */}
+            {pieces.map((piece) => {
+              if (piece.type === 'straight') {
+                const x1 = (piece.x - designX) * scaleX;
+                const y1 = (piece.y - designY) * scaleY;
+                const x2 = (piece.x + piece.params.length * Math.cos((piece.rotation || 0) * Math.PI / 180) - designX) * scaleX;
+                const y2 = (piece.y + piece.params.length * Math.sin((piece.rotation || 0) * Math.PI / 180) - designY) * scaleY;
+                return <line key={piece.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#6366f1" strokeWidth={4} strokeLinecap="round" />;
+              } else if (piece.type === 'curve') {
+                const r = piece.params.radius * 2;
+                const angle = piece.params.angle;
+                const rot = (piece.rotation || 0) * Math.PI / 180;
+                const cx = (piece.x - designX) * scaleX;
+                const cy = (piece.y - designY) * scaleY;
+                const startAngle = rot;
+                const endAngle = rot + angle * Math.PI / 180;
+                const x1 = cx + r * Math.cos(startAngle) * scaleX;
+                const y1 = cy + r * Math.sin(startAngle) * scaleY;
+                const x2 = cx + r * Math.cos(endAngle) * scaleX;
+                const y2 = cy + r * Math.sin(endAngle) * scaleY;
+                const largeArc = angle > 180 ? 1 : 0;
+                const d = `M${x1},${y1} A${r*scaleX},${r*scaleY} 0 ${largeArc} 1 ${x2},${y2}`;
+                return <path key={piece.id} d={d} stroke="#f59e42" strokeWidth={4} fill="none" />;
+              }
+              return null;
+            })}
+            {/* 当前视口区域框，可拖拽 */}
+            <rect
+              x={rectX}
+              y={rectY}
+              width={rectW}
+              height={rectH}
+              fill="none"
+              stroke="#ef4444"
+              strokeWidth={2.5}
+              strokeDasharray="6,3"
+              rx={3}
+              style={{ cursor: 'grab', pointerEvents: 'all' }}
+            />
+          </svg>
+        );
+  // 缩略图拖拽事件处理
+  const handleMiniMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setDraggingMini(true);
+    // 记录鼠标在红框内的偏移
+    const startX = e.nativeEvent.offsetX;
+    const startY = e.nativeEvent.offsetY;
+    const rectX = (viewBox.x - designX) * scaleX;
+    const rectY = (viewBox.y - designY) * scaleY;
+    miniDragOffset.current = {
+      x: startX - rectX,
+      y: startY - rectY
+    };
+    e.stopPropagation();
+  };
+  const handleMiniMouseMove = (e: React.MouseEvent) => {
+    if (!draggingMini) return;
+    const mouseX = e.nativeEvent.offsetX;
+    const mouseY = e.nativeEvent.offsetY;
+    let newRectX = mouseX - miniDragOffset.current.x;
+    let newRectY = mouseY - miniDragOffset.current.y;
+    const rectW = viewBox.width * scaleX;
+    const rectH = viewBox.height * scaleY;
+    newRectX = Math.max(0, Math.min(miniWidth - rectW, newRectX));
+    newRectY = Math.max(0, Math.min(miniHeight - rectH, newRectY));
+    const newViewBoxX = designX + newRectX / scaleX;
+    const newViewBoxY = designY + newRectY / scaleY;
+    setViewBox({ ...viewBox, x: newViewBoxX, y: newViewBoxY });
+  };
+  const handleMiniMouseUp = () => {
+    setDraggingMini(false);
+  };
   }
   const [pieces, setPieces] = React.useState<any[]>([])
   const [viewBox, setViewBox] = React.useState({ 
@@ -1160,7 +1270,13 @@ export default function Home() {
         minWidth: 190,
         minHeight: 100
       }
-    }, [renderMiniMap()]),
+    }, [
+      renderMiniMap({
+        onMiniMouseDown: handleMiniMouseDown,
+        onMiniMouseMove: handleMiniMouseMove,
+        onMiniMouseUp: handleMiniMouseUp,
+      })
+    ]),
       
       React.createElement('h1', {
         key: 'old-title',
