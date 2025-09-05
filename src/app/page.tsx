@@ -4,6 +4,40 @@ import React from 'react'
 
 // SolidWorks风格赛道设计器 - 增强版
 export default function Home() {
+  // 缩略图渲染函数
+  function renderMiniMap() {
+  const miniWidth = 300;
+  const miniHeight = 150;
+    return (
+      <svg width={miniWidth} height={miniHeight} viewBox="-2000 -1000 4000 2000" style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 6 }}>
+        {pieces.map((piece) => {
+          if (piece.type === 'straight') {
+            const x1 = piece.x;
+            const y1 = piece.y;
+            const x2 = piece.x + piece.params.length * Math.cos((piece.rotation || 0) * Math.PI / 180);
+            const y2 = piece.y + piece.params.length * Math.sin((piece.rotation || 0) * Math.PI / 180);
+            return <line key={piece.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#6366f1" strokeWidth={18} strokeLinecap="round" />;
+          } else if (piece.type === 'curve') {
+            const r = piece.params.radius * 2;
+            const angle = piece.params.angle;
+            const rot = (piece.rotation || 0) * Math.PI / 180;
+            const cx = piece.x;
+            const cy = piece.y;
+            const startAngle = rot;
+            const endAngle = rot + angle * Math.PI / 180;
+            const x1 = cx + r * Math.cos(startAngle);
+            const y1 = cy + r * Math.sin(startAngle);
+            const x2 = cx + r * Math.cos(endAngle);
+            const y2 = cy + r * Math.sin(endAngle);
+            const largeArc = angle > 180 ? 1 : 0;
+            const d = `M${x1},${y1} A${r},${r} 0 ${largeArc} 1 ${x2},${y2}`;
+            return <path key={piece.id} d={d} stroke="#f59e42" strokeWidth={18} fill="none" />;
+          }
+          return null;
+        })}
+      </svg>
+    );
+  }
   const [pieces, setPieces] = React.useState<any[]>([])
   const [viewBox, setViewBox] = React.useState({ 
     x: -2000, // 扩大视图范围，确保16M×8M区域完全可见
@@ -196,47 +230,10 @@ export default function Home() {
         return
       }
     }
-    setPieces([])
-    setCurrentArchiveName('未命名项目')
-    setSelectedId(null)
-    setSelectedIds([])
-    resetView() // 重置视图
-    setStatusMessage('已新建项目')
-    setTimeout(() => setStatusMessage(''), 3000)
-  }
-
-  // 智能赛道识别和生成
-  const parseTrackCode = (code: string) => {
-    const normalized = code.trim().toUpperCase()
-    
-    // 识别直道: L + 数字 (如 L88, L200)
-    const straightMatch = normalized.match(/^L(\d+)$/)
-    if (straightMatch) {
-      const length = parseInt(straightMatch[1])
-      return {
-        type: 'straight' as const,
-        params: { length }
-      }
-    }
-    
-    // 识别弯道: R + 半径 + A + 角度 (如 R200A90, R150A45)
-    const curveMatch = normalized.match(/^R(\d+)A(\d+)$/)
-    if (curveMatch) {
-      const radius = parseInt(curveMatch[1])
-      const angle = parseInt(curveMatch[2])
-      return {
-        type: 'curve' as const,
-        params: { radius, angle }
-      }
-    }
-    
-    // 识别常用弯道简写
-    const commonCurves: Record<string, {radius: number, angle: number}> = {
-      'R90': { radius: 200, angle: 90 },
-      'R45': { radius: 200, angle: 45 },
-      'R30': { radius: 200, angle: 30 },
+    // ...existing code...
+    const commonCurves = {
       'R180': { radius: 200, angle: 180 }
-    }
+    };
     
     if (commonCurves[normalized]) {
       return {
@@ -1076,7 +1073,8 @@ export default function Home() {
       height: '100vh', 
       display: 'flex', 
       flexDirection: 'column',
-      fontFamily: 'Arial, sans-serif'
+      fontFamily: 'Arial, sans-serif',
+      position: 'relative'
     }
   }, [
     // 工具栏
@@ -1143,6 +1141,26 @@ export default function Home() {
           }, '实验室内部专用工具')
         ])
       ]),
+    // 右下角悬浮缩略图
+    React.createElement('div', {
+      key: 'mini-map',
+      style: {
+        position: 'fixed',
+        right: 20,
+        bottom: 20,
+        zIndex: 1000,
+        background: 'rgba(255,255,255,0.95)',
+        borderRadius: 8,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+        padding: 8,
+        border: '1px solid #e5e7eb',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 190,
+        minHeight: 100
+      }
+    }, [renderMiniMap()]),
       
       React.createElement('h1', {
         key: 'old-title',
