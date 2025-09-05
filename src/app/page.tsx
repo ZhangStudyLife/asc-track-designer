@@ -423,6 +423,10 @@ export default function Home() {
     const svg = svgRef.current
     if (!svg) return
 
+    // 获取BOM统计数据
+    const stats = calculateTrackStats()
+    const bomEntries = Object.entries(stats.bom).sort((a, b) => (b[1] as number) - (a[1] as number))
+
     // 创建临时SVG，包含完整设计区域
     const tempSvg = svg.cloneNode(true) as SVGSVGElement
     tempSvg.setAttribute('viewBox', `${DESIGN_BOUNDS.x} ${DESIGN_BOUNDS.y} ${DESIGN_BOUNDS.width} ${DESIGN_BOUNDS.height}`)
@@ -434,8 +438,8 @@ export default function Home() {
     const ctx = canvas.getContext('2d')
     const img = new Image()
     
-    // 超高分辨率画布
-    canvas.width = 7680
+    // 超高分辨率画布 - 增加宽度以容纳BOM信息
+    canvas.width = 9600  // 增加宽度来放置BOM信息
     canvas.height = 3840
     
     img.onload = () => {
@@ -448,8 +452,57 @@ export default function Home() {
         ctx.fillStyle = 'white'
         ctx.fillRect(0, 0, canvas.width, canvas.height)
         
-        // 绘制SVG
-        ctx.drawImage(img, 0, 0)
+        // 绘制SVG (保持在左侧)
+        ctx.drawImage(img, 0, 0, 7680, 3840)
+        
+        // 在右侧绘制BOM信息
+        const bomStartX = 7780  // SVG右侧100像素空隙后开始
+        const bomStartY = 100
+        
+        // 标题
+        ctx.fillStyle = '#1f2937'
+        ctx.font = 'bold 80px Arial'
+        ctx.fillText('📋 BOM物料清单', bomStartX, bomStartY)
+        
+        // 总结信息背景
+        ctx.fillStyle = '#1f2937'
+        ctx.fillRect(bomStartX, bomStartY + 40, 1700, 200)
+        
+        // 总结信息文字
+        ctx.fillStyle = 'white'
+        ctx.font = 'bold 60px Arial'
+        ctx.fillText(`总元件数量: ${stats.totalPieces} 个`, bomStartX + 20, bomStartY + 120)
+        ctx.fillStyle = '#fbbf24'
+        ctx.font = 'bold 70px Arial'
+        ctx.fillText(`赛道总长度: ${stats.totalLength} 米`, bomStartX + 20, bomStartY + 200)
+        
+        // 元件列表标题
+        let currentY = bomStartY + 320
+        ctx.fillStyle = '#1f2937'
+        ctx.font = 'bold 60px Arial'
+        ctx.fillText('🏆 赛道元件统计', bomStartX, currentY)
+        
+        // 绘制每个元件统计
+        currentY += 80
+        bomEntries.forEach(([type, count], index) => {
+          // 交替背景色
+          ctx.fillStyle = index % 2 === 0 ? '#1f2937' : '#374151'
+          ctx.fillRect(bomStartX, currentY, 1700, 80)
+          
+          // 元件类型 (黄色)
+          ctx.fillStyle = '#fbbf24'
+          ctx.font = 'bold 50px monospace'
+          ctx.fillText(type, bomStartX + 20, currentY + 55)
+          
+          // 数量 (绿色背景)
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.3)'
+          ctx.fillRect(bomStartX + 1400, currentY + 10, 280, 60)
+          ctx.fillStyle = '#10b981'
+          ctx.font = 'bold 50px Arial'
+          ctx.fillText(`${count} 个`, bomStartX + 1420, currentY + 55)
+          
+          currentY += 90
+        })
       }
       
       // 导出高质量PNG
@@ -467,8 +520,50 @@ export default function Home() {
     img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)))
   }
 
+  // BOM统计和赛道长度计算
+  const calculateTrackStats = () => {
+    // 统计各种赛道数量
+    const bomStats = {}
+    let totalLength = 0
+
+    pieces.forEach(piece => {
+      let pieceKey = ''
+      let pieceLength = 0
+
+      if (piece.type === 'straight') {
+        pieceKey = `L${piece.params.length}`
+        pieceLength = piece.params.length // 直道长度就是参数值(cm)
+      } else if (piece.type === 'curve') {
+        pieceKey = `R${piece.params.radius}-${piece.params.angle}`
+        // 弯道长度 = 半径 × 角度(弧度) = 半径 × (角度° × π / 180)
+        const radiusInCm = piece.params.radius
+        const angleInRadians = (piece.params.angle * Math.PI) / 180
+        pieceLength = radiusInCm * angleInRadians
+      }
+
+      // 统计数量
+      bomStats[pieceKey] = (bomStats[pieceKey] || 0) + 1
+      totalLength += pieceLength
+    })
+
+    // 转换为米并保留2位小数
+    const totalLengthInMeters = (totalLength / 100).toFixed(2)
+
+    return {
+      bom: bomStats,
+      totalLength: totalLengthInMeters,
+      totalPieces: pieces.length
+    }
+  }
+
+  // 显示BOM对话框状态
+  const [showBomDialog, setShowBomDialog] = React.useState(false)
+
+  // 导出赛道尺寸信息
   // 导出赛道尺寸信息
   const exportTrackInfo = () => {
+    const stats = calculateTrackStats()
+    
     const trackInfo = pieces.map(piece => {
       if (piece.type === 'straight') {
         return `L${piece.params.length}`
@@ -480,7 +575,9 @@ export default function Home() {
     
     const info = {
       totalPieces: pieces.length,
+      totalLength: `${stats.totalLength}米`,
       pieces: trackInfo,
+      bom: stats.bom,
       details: pieces.map(p => ({
         type: p.type,
         params: p.params,
@@ -1631,18 +1728,18 @@ export default function Home() {
         }, '🖼️ 导出图片'),
 
         React.createElement('button', {
-          key: 'export-info',
-          onClick: exportTrackInfo,
+          key: 'view-bom',
+          onClick: () => setShowBomDialog(true),
           style: {
             padding: '8px 16px',
-            backgroundColor: '#f59e0b',
+            backgroundColor: '#059669',
             color: 'white',
             border: 'none',
             borderRadius: '6px',
             cursor: 'pointer',
             userSelect: 'none'
           }
-        }, '📋 导出信息'),
+        }, '📋 查看BOM'),
 
         React.createElement('button', {
           key: 'clear',
@@ -2157,6 +2254,155 @@ export default function Home() {
           }, '保存')
         ])
       ]) : null,
+
+      // BOM统计对话框
+      showBomDialog ? (() => {
+        const stats = calculateTrackStats()
+        const bomEntries = Object.entries(stats.bom).sort((a, b) => (b[1] as number) - (a[1] as number)) // 按数量排序
+        
+        return React.createElement('div', {
+          key: 'bom-dialog',
+          style: {
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: 'white',
+            padding: '30px',
+            borderRadius: '12px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            zIndex: 1000,
+            minWidth: '480px',
+            maxWidth: '600px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            border: '1px solid #e5e7eb'
+          }
+        }, [
+          React.createElement('h3', { 
+            key: 'bom-title',
+            style: { 
+              margin: '0 0 20px 0', 
+              color: '#1f2937', 
+              fontSize: '20px', 
+              fontWeight: 'bold',
+              textAlign: 'center',
+              borderBottom: '2px solid #e5e7eb',
+              paddingBottom: '10px'
+            }
+          }, '📋 BOM物料清单'),
+          
+          React.createElement('div', {
+            key: 'summary',
+            style: {
+              backgroundColor: '#1f2937',
+              color: 'white',
+              padding: '15px',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              textAlign: 'center'
+            }
+          }, [
+            React.createElement('div', { 
+              key: 'total-pieces', 
+              style: { fontSize: '16px', marginBottom: '8px' } 
+            }, `总元件数量: ${stats.totalPieces} 个`),
+            React.createElement('div', { 
+              key: 'total-length', 
+              style: { fontSize: '18px', fontWeight: 'bold', color: '#fbbf24' } 
+            }, `赛道总长度: ${stats.totalLength} 米`)
+          ]),
+          
+          React.createElement('h4', { 
+            key: 'bom-list-title',
+            style: { margin: '20px 0 15px 0', color: '#1f2937', fontSize: '16px', fontWeight: 'bold' }
+          }, '🏆 赛道元件统计'),
+          
+          React.createElement('div', {
+            key: 'bom-list',
+            style: { marginBottom: '25px' }
+          }, bomEntries.map(([type, count], index) => 
+            React.createElement('div', {
+              key: type,
+              style: {
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px 16px',
+                backgroundColor: index % 2 === 0 ? '#1f2937' : '#374151',
+                color: 'white',
+                borderRadius: '6px',
+                marginBottom: '4px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              }
+            }, [
+              React.createElement('span', { 
+                key: 'type', 
+                style: { 
+                  fontFamily: 'monospace', 
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  color: '#fbbf24'
+                } 
+              }, type),
+              React.createElement('span', { 
+                key: 'count', 
+                style: { 
+                  fontWeight: 'bold', 
+                  fontSize: '16px',
+                  color: '#10b981',
+                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                  padding: '4px 8px',
+                  borderRadius: '4px'
+                } 
+              }, `${count} 个`)
+            ])
+          )),
+          
+          React.createElement('div', {
+            key: 'bom-buttons',
+            style: { display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '20px' }
+          }, [
+            React.createElement('button', {
+              key: 'export-bom',
+              onClick: exportTrackInfo,
+              style: {
+                padding: '10px 20px',
+                backgroundColor: '#3b82f6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+                boxShadow: '0 2px 4px rgba(59, 130, 246, 0.3)',
+                transition: 'all 0.2s'
+              },
+              onMouseOver: (e) => e.target.style.backgroundColor = '#2563eb',
+              onMouseOut: (e) => e.target.style.backgroundColor = '#3b82f6'
+            }, '📁 导出JSON'),
+            
+            React.createElement('button', {
+              key: 'close-bom',
+              onClick: () => setShowBomDialog(false),
+              style: {
+                padding: '10px 20px',
+                backgroundColor: '#6b7280',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+                boxShadow: '0 2px 4px rgba(107, 114, 128, 0.3)',
+                transition: 'all 0.2s'
+              },
+              onMouseOver: (e) => e.target.style.backgroundColor = '#4b5563',
+              onMouseOut: (e) => e.target.style.backgroundColor = '#6b7280'
+            }, '✖️ 关闭')
+          ])
+        ])
+      })() : null,
 
       // 自定义赛道对话框
       showCustomDialog ? React.createElement('div', {
