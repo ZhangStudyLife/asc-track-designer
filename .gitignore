@@ -1,1 +1,84 @@
-node_modules
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build output
+.next/
+out/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# Env
+.env*
+
+# Log
+*.log
+
+# Test
+coverage/
+
+# Misc
+*.swp
+*.swo
+*.tmp
+*.bak
+*.orig
+
+# Mac
+Icon?
+
+# Windows
+*.lnk
+
+# Editor
+.idea/
+*.iml
+
+# Process/Temp files
+*.cache
+*.pid
+*.seed
+*.tgz
+*.gz
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.tmp
+*.temp
+*.bak
+*.old
+*.swp
+*.swo
+*.swn
+*.tmp
+*.log
+*.lock
+*.pid
+*.seed
+*.pid.lock
+
+# Local archives
+*.tgz
+
+# npm package
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Next.js
+.next/
+
+# Output of 'npm pack'
+*.tgz
+
+# 忽略所有过程/中间文件
+!.gitignore
