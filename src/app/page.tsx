@@ -12,6 +12,11 @@ export default function Home() {
     height: 2000 // 10M高度（8M+2M边距）
   })
   const [scale, setScale] = React.useState(1.0)
+  // 缩放比例上下限
+  const MIN_SCALE = 0.18
+  const MAX_SCALE = 2.5
+  // 设计画布边界（与resetView一致）
+  const CANVAS_BOUNDS = { x: -2000, y: -1000, width: 4000, height: 2000 }
   const [selectedId, setSelectedId] = React.useState<number | null>(null)
   const [selectedIds, setSelectedIds] = React.useState<number[]>([]) // 多选
   const [isSelecting, setIsSelecting] = React.useState(false) // 框选状态
@@ -719,19 +724,31 @@ export default function Home() {
   // 平滑缩放 - 限制最大视图为16M×8M，最小200×100，增强流畅性
   const handleZoom = (delta: number, centerX?: number, centerY?: number) => {
     const zoomFactor = delta > 0 ? 1.15 : 0.85 // 优化缩放步长，更流畅
-    // 扩大缩放范围：最大显示20M×10M，最小200×100
+    // 计算缩放后的宽高
     const newWidth = Math.max(150, Math.min(8000, viewBox.width * zoomFactor))
     const newHeight = Math.max(75, Math.min(4000, viewBox.height * zoomFactor))
-    
-    // 以指定点为中心缩放
-    const centerViewX = centerX !== undefined ? centerX : viewBox.x + viewBox.width / 2
-    const centerViewY = centerY !== undefined ? centerY : viewBox.y + viewBox.height / 2
-    
-    const newX = centerViewX - newWidth / 2
-    const newY = centerViewY - newHeight / 2
-    
-    setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight })
-    setScale(1000 / newWidth)
+    // 计算缩放后的 scale
+    const newScale = 1000 / newWidth
+    // 限制 scale 在上下限范围内
+    if (newScale < MIN_SCALE || newScale > MAX_SCALE) {
+      return // 超出缩放范围则不缩放
+    }
+  // 以指定点为中心缩放
+  const centerViewX = centerX !== undefined ? centerX : viewBox.x + viewBox.width / 2
+  const centerViewY = centerY !== undefined ? centerY : viewBox.y + viewBox.height / 2
+  let newX = centerViewX - newWidth / 2
+  let newY = centerViewY - newHeight / 2
+
+  // 边界限制：缩放后画布不能超出设计区域
+  // 限制左上角
+  if (newX < CANVAS_BOUNDS.x) newX = CANVAS_BOUNDS.x
+  if (newY < CANVAS_BOUNDS.y) newY = CANVAS_BOUNDS.y
+  // 限制右下角
+  if (newX + newWidth > CANVAS_BOUNDS.x + CANVAS_BOUNDS.width) newX = CANVAS_BOUNDS.x + CANVAS_BOUNDS.width - newWidth
+  if (newY + newHeight > CANVAS_BOUNDS.y + CANVAS_BOUNDS.height) newY = CANVAS_BOUNDS.y + CANVAS_BOUNDS.height - newHeight
+
+  setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight })
+  setScale(newScale)
   }
 
   // 滚轮缩放
