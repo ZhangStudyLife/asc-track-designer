@@ -183,8 +183,8 @@ export default function Home() {
   const [archives, setArchives] = React.useState<string[]>([])
   const [showArchiveDialog, setShowArchiveDialog] = React.useState(false)
   const [archiveName, setArchiveName] = React.useState('')
-  const [isRightDragging, setIsRightDragging] = React.useState(false)
-  const [rightDragStart, setRightDragStart] = React.useState({ x: 0, y: 0 })
+  const [isCtrlDragging, setIsCtrlDragging] = React.useState(false)
+  const [ctrlDragStart, setCtrlDragStart] = React.useState({ x: 0, y: 0 })
   const svgRef = React.useRef<SVGSVGElement>(null)
   
   // 客户端水合后加载localStorage数据
@@ -240,37 +240,34 @@ export default function Home() {
     }
   }, [pieces, viewBox, currentArchiveName, isClient])
 
-  // 右键拖拽画布功能
+  // Ctrl+左键拖拽画布功能
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 2) { // 右键
+    if (e.button === 0 && e.ctrlKey) { // Ctrl+左键
       e.preventDefault()
-      setIsRightDragging(true)
-      setRightDragStart({ x: e.clientX, y: e.clientY })
+      setIsCtrlDragging(true)
+      setCtrlDragStart({ x: e.clientX, y: e.clientY })
     }
   }
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (isRightDragging) {
+    if (isCtrlDragging) {
       e.preventDefault()
-      const deltaX = e.clientX - rightDragStart.x
-      const deltaY = e.clientY - rightDragStart.y
-      
+      const deltaX = e.clientX - ctrlDragStart.x
+      const deltaY = e.clientY - ctrlDragStart.y
       // 优化移动比例，提高拖拽灵敏度
       const moveScale = viewBox.width / (svgRef.current?.clientWidth || 800) * 0.8
-      
       setViewBox(prev => ({
         ...prev,
         x: prev.x - deltaX * moveScale,
         y: prev.y - deltaY * moveScale
       }))
-      
-      setRightDragStart({ x: e.clientX, y: e.clientY })
+      setCtrlDragStart({ x: e.clientX, y: e.clientY })
     }
   }
 
   const handleCanvasMouseUp = (e: React.MouseEvent) => {
-    if (e.button === 2) { // 右键
-      setIsRightDragging(false)
+    if (isCtrlDragging) {
+      setIsCtrlDragging(false)
     }
   }
 
@@ -1937,7 +1934,7 @@ export default function Home() {
         height: '100%',
         viewBox: `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`,
         style: {
-          cursor: isDragging ? 'grabbing' : (isRightDragging ? 'move' : 'default')
+          cursor: isDragging ? 'grabbing' : (isCtrlDragging ? 'move' : 'default')
         },
         onMouseDown: (e) => {
           handleMouseDown(e)
