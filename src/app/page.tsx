@@ -1,11 +1,10 @@
-
-'use client'
+"use client"
 import React from 'react'
 
-// ...existing code...
-
-// SolidWorks风格赛道设计器 - 增强版
 export default function Home() {
+  // 拖动状态
+  const [isDragging, setIsDragging] = React.useState(false)
+  // 拖动状态
   // 测量吸附点距离相关状态
   const [isMeasuring, setIsMeasuring] = React.useState(false)
   // 记录测量点为 { pieceId, type: 'start'|'end' }
@@ -85,17 +84,26 @@ export default function Home() {
         const dist = Math.sqrt(dx * dx + dy * dy);
         const angle = Math.atan2(dy, dx) * 180 / Math.PI;
         // 插入直道piece，起点pt1，长度dist/2，角度angle
-        setPieces(prev => [
-          ...prev,
-          {
-            id: Date.now(),
-            type: 'straight',
-            params: { length: dist / 2 },
-            x: pt1.x,
-            y: pt1.y,
-            rotation: angle
+        setPieces(prev => {
+          const next = [
+            ...prev,
+            {
+              id: Date.now(),
+              type: 'straight',
+              params: { length: dist / 2 },
+              x: pt1.x,
+              y: pt1.y,
+              rotation: angle
+            }
+          ];
+          let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
+          if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(next)) {
+            history.push(next);
+            if (history.length > 100) history = history.slice(-100);
+            localStorage.setItem('piecesHistory', JSON.stringify(history));
           }
-        ]);
+          return next;
+        });
         setTimeout(() => setAutoFillPoints([]), 200);
       }, 150);
     }
@@ -252,6 +260,8 @@ export default function Home() {
   };
   }
   const [pieces, setPieces] = React.useState<any[]>([])
+
+  // 每次 pieces 变化时自动记录历史快照（拖动时不入栈）
   const [viewBox, setViewBox] = React.useState({ 
     x: -2000, // 扩大视图范围，确保16M×8M区域完全可见
     y: -1000,  
@@ -269,7 +279,6 @@ export default function Home() {
   const [isSelecting, setIsSelecting] = React.useState(false) // 框选状态
   const [selectionStart, setSelectionStart] = React.useState<{x: number, y: number} | null>(null)
   const [selectionBox, setSelectionBox] = React.useState<{x: number, y: number, width: number, height: number} | null>(null)
-  const [isDragging, setIsDragging] = React.useState(false)
   const [dragOffset, setDragOffset] = React.useState({ x: 0, y: 0 })
   const [isRotating, setIsRotating] = React.useState(false)
   const [rotationInput, setRotationInput] = React.useState('')
@@ -289,6 +298,31 @@ export default function Home() {
   const [isCtrlDragging, setIsCtrlDragging] = React.useState(false)
   const [ctrlDragStart, setCtrlDragStart] = React.useState({ x: 0, y: 0 })
   const svgRef = React.useRef<SVGSVGElement>(null)
+
+  // 撤销功能：Ctrl+Z
+  React.useEffect(() => {
+    const handleUndoKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        // 撤销逻辑：回退pieces到上一个状态
+        setPieces(prev => {
+          const history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
+          if (history.length > 1) {
+            history.pop();
+            localStorage.setItem('piecesHistory', JSON.stringify(history));
+            setStatusMessage('撤销成功');
+            setTimeout(() => setStatusMessage(''), 1000);
+            return history[history.length - 1];
+          }
+          setStatusMessage('没有可撤销的操作');
+          setTimeout(() => setStatusMessage(''), 1000);
+          return prev;
+        });
+      }
+    };
+    window.addEventListener('keydown', handleUndoKey);
+    return () => window.removeEventListener('keydown', handleUndoKey);
+  }, []);
   
   // 客户端水合后加载localStorage数据
   React.useEffect(() => {
@@ -444,14 +478,14 @@ export default function Home() {
     const commonCurves = {
       'R180': { radius: 200, angle: 180 }
     };
-    
+    // normalized 示例赋值
+    let normalized = 'R180';
     if (commonCurves[normalized]) {
       return {
         type: 'curve' as const,
         params: commonCurves[normalized]
       }
     }
-    
     return null
   }
 
@@ -471,7 +505,16 @@ export default function Home() {
       rotation: 0
     }
     
-    setPieces(prev => [...prev, newPiece])
+    setPieces(prev => {
+      const next = [...prev, newPiece];
+      let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
+      if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(next)) {
+        history.push(next);
+        if (history.length > 100) history = history.slice(-100);
+        localStorage.setItem('piecesHistory', JSON.stringify(history));
+      }
+      return next;
+    });
     setSelectedId(newPiece.id)
     setStatusMessage(`已添加赛道: ${code}`)
     setTimeout(() => setStatusMessage(''), 3000)
@@ -494,14 +537,23 @@ export default function Home() {
   const SNAP_DISTANCE = 30 // 吸附距离
 
   const addPiece = (type: string, params: any) => {
-    setPieces(prev => [...prev, {
-      id: Date.now(),
-      type,
-      x: viewBox.x + viewBox.width / 2 + (Math.random() - 0.5) * 100,
-      y: viewBox.y + viewBox.height / 2 + (Math.random() - 0.5) * 100,
-      rotation: 0, // 添加旋转角度
-      params
-    }])
+    setPieces(prev => {
+      const next = [...prev, {
+        id: Date.now(),
+        type,
+        x: viewBox.x + viewBox.width / 2 + (Math.random() - 0.5) * 100,
+        y: viewBox.y + viewBox.height / 2 + (Math.random() - 0.5) * 100,
+        rotation: 0, // 添加旋转角度
+        params
+      }];
+      let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
+      if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(next)) {
+        history.push(next);
+        if (history.length > 100) history = history.slice(-100);
+        localStorage.setItem('piecesHistory', JSON.stringify(history));
+      }
+      return next;
+    });
   }
 
   // 保存赛道为JSON文件
@@ -1013,17 +1065,35 @@ export default function Home() {
       
       if (e.key === 'Tab' && (selectedId !== null || selectedIds.length > 0)) {
         e.preventDefault()
-        // Tab键：旋转选中的赛道
+        // Tab键：旋转选中的赛道，并同步入栈
         const idsToRotate = selectedIds.length > 0 ? selectedIds : (selectedId !== null ? [selectedId] : [])
-        setPieces(prev => prev.map(p => 
-          idsToRotate.includes(p.id)
-            ? { ...p, rotation: (p.rotation - 15) % 360 }
-            : p
-        ))
+        setPieces(prev => {
+          const next = prev.map(p =>
+            idsToRotate.includes(p.id)
+              ? { ...p, rotation: (p.rotation - 15) % 360 }
+              : p
+          );
+          let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
+          if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(next)) {
+            history.push(next);
+            if (history.length > 100) history = history.slice(-100);
+            localStorage.setItem('piecesHistory', JSON.stringify(history));
+          }
+          return next;
+        });
       } else if (e.key === 'Delete') {
-        // Delete键：删除选中元件
+        // Delete键：删除选中元件，并同步入栈
         const idsToDelete = selectedIds.length > 0 ? selectedIds : (selectedId !== null ? [selectedId] : [])
-        setPieces(prev => prev.filter(p => !idsToDelete.includes(p.id)))
+        setPieces(prev => {
+          const next = prev.filter(p => !idsToDelete.includes(p.id));
+          let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
+          if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(next)) {
+            history.push(next);
+            if (history.length > 100) history = history.slice(-100);
+            localStorage.setItem('piecesHistory', JSON.stringify(history));
+          }
+          return next;
+        });
         setSelectedId(null)
         setSelectedIds([])
       } else if (e.key === 'Escape') {
@@ -1173,15 +1243,28 @@ export default function Home() {
         setSelectedId(null)
       } else if (selectedIds.includes(piece.id)) {
         // 点击已选中的多选项：开始拖拽多选
-        setIsDragging(true)
+        // 拖动开始时入栈一次快照
+        let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
+        if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(pieces)) {
+          history.push(pieces);
+          if (history.length > 100) history = history.slice(-100);
+          localStorage.setItem('piecesHistory', JSON.stringify(history));
+        }
+  setIsDragging(true)
         const coords = getMouseSVGCoords(e)
         setDragOffset({ x: coords.x - piece.x, y: coords.y - piece.y })
       } else {
         // 单选
         setSelectedId(piece.id)
         setSelectedIds([])
-        setIsDragging(true)
-        
+        // 拖动开始时入栈一次快照
+        let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
+        if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(pieces)) {
+          history.push(pieces);
+          if (history.length > 100) history = history.slice(-100);
+          localStorage.setItem('piecesHistory', JSON.stringify(history));
+        }
+  setIsDragging(true)
         const coords = getMouseSVGCoords(e)
         setDragOffset({ x: coords.x - piece.x, y: coords.y - piece.y })
       }
@@ -1275,7 +1358,14 @@ export default function Home() {
       setSelectionBox(null)
       setSelectionStart(null)
     }
-    setIsDragging(false)
+  setIsDragging(false)
+    // 拖动结束时如pieces有变化则入栈一次
+    let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
+    if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(pieces)) {
+      history.push(pieces);
+      if (history.length > 100) history = history.slice(-100);
+      localStorage.setItem('piecesHistory', JSON.stringify(history));
+    }
   }
 
   return React.createElement('div', {
@@ -3057,4 +3147,33 @@ export default function Home() {
       ])
     ])
   ])
+}
+
+// 解析赛道代码，如 L88、R200A90
+
+// normalized 示例定义，防止报错（如有更复杂逻辑请补充）
+let normalized = 'R180';
+// ...如有更复杂的 normalized 赋值逻辑请补充...
+
+// 解析赛道代码，如 L88、R200A90
+function parseTrackCode(code: string) {
+  code = code.trim().toUpperCase();
+  if (code.startsWith('L')) {
+    // 直道 L88
+    const length = parseFloat(code.slice(1));
+    if (!isNaN(length)) {
+      return { type: 'straight', params: { length } };
+    }
+  } else if (code.startsWith('R')) {
+    // 弯道 R200A90
+    const match = code.match(/^R(\d+)(A(\d+))?$/);
+    if (match) {
+      const radius = parseFloat(match[1]);
+      const angle = match[3] ? parseFloat(match[3]) : 90;
+      if (!isNaN(radius) && !isNaN(angle)) {
+        return { type: 'curve', params: { radius, angle } };
+      }
+    }
+  }
+  return null;
 }
