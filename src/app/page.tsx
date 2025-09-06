@@ -10,6 +10,9 @@ export default function Home() {
   const [isMeasuring, setIsMeasuring] = React.useState(false)
   // 记录测量点为 { pieceId, type: 'start'|'end' }
   const [measurePoints, setMeasurePoints] = React.useState<{ pieceId: number, type: 'start' | 'end' }[]>([])
+  // 自动补全直道相关状态
+  const [isAutoFill, setIsAutoFill] = React.useState(false)
+  const [autoFillPoints, setAutoFillPoints] = React.useState<{ pieceId: number, type: 'start' | 'end' }[]>([])
 
   // 计算两点距离
   const getDistance = (a: {x: number, y: number}, b: {x: number, y: number}) => {
@@ -18,14 +21,83 @@ export default function Home() {
 
   // 吸附点点击事件
   // 点击吸附点时传入pieceId和点类型
+  // 测量模式下点击吸附点
   const handleMeasurePointClick = (info: { pieceId: number, type: 'start' | 'end' }) => {
     if (!isMeasuring) return;
     if (measurePoints.length === 0) {
       setMeasurePoints([info]);
     } else if (measurePoints.length === 1) {
-      // 第二个点
       setMeasurePoints(prev => [prev[0], info]);
       setTimeout(() => setIsMeasuring(false), 100);
+    }
+  }
+
+  // 自动补全模式下点击吸附点
+  const handleAutoFillPointClick = (info: { pieceId: number, type: 'start' | 'end' }) => {
+    if (!isAutoFill) return;
+    if (autoFillPoints.length === 0) {
+      setAutoFillPoints([info]);
+    } else if (autoFillPoints.length === 1) {
+      const newPoints = [autoFillPoints[0], info];
+      setAutoFillPoints(newPoints);
+      setTimeout(() => setIsAutoFill(false), 100);
+      setTimeout(() => {
+        // 获取两个点的最新坐标
+        const getPointCoord = (mp: { pieceId: number, type: 'start' | 'end' }) => {
+          const piece = pieces.find(p => p.id === mp.pieceId)
+          if (!piece) return { x: 0, y: 0 }
+          if (piece.type === 'straight') {
+            const length = piece.params.length * 2
+            if (mp.type === 'start') {
+              return { x: piece.x, y: piece.y }
+            } else {
+              return {
+                x: piece.x + length * Math.cos((piece.rotation || 0) * Math.PI / 180),
+                y: piece.y + length * Math.sin((piece.rotation || 0) * Math.PI / 180)
+              }
+            }
+          } else if (piece.type === 'curve') {
+            const centerRadius = piece.params.radius * 2
+            const angleRad = (piece.params.angle * Math.PI) / 180
+            if (mp.type === 'start') {
+              const cx = centerRadius
+              const cy = 0
+              return {
+                x: piece.x + cx * Math.cos((piece.rotation || 0) * Math.PI / 180) - cy * Math.sin((piece.rotation || 0) * Math.PI / 180),
+                y: piece.y + cx * Math.sin((piece.rotation || 0) * Math.PI / 180) + cy * Math.cos((piece.rotation || 0) * Math.PI / 180)
+              }
+            } else {
+              const cx = centerRadius * Math.cos(angleRad)
+              const cy = centerRadius * Math.sin(angleRad)
+              return {
+                x: piece.x + cx * Math.cos((piece.rotation || 0) * Math.PI / 180) - cy * Math.sin((piece.rotation || 0) * Math.PI / 180),
+                y: piece.y + cx * Math.sin((piece.rotation || 0) * Math.PI / 180) + cy * Math.cos((piece.rotation || 0) * Math.PI / 180)
+              }
+            }
+          }
+          return { x: 0, y: 0 }
+        }
+        const pt1 = getPointCoord(newPoints[0]);
+        const pt2 = getPointCoord(newPoints[1]);
+        // 计算距离和角度
+        const dx = pt2.x - pt1.x;
+        const dy = pt2.y - pt1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        // 插入直道piece，起点pt1，长度dist/2，角度angle
+        setPieces(prev => [
+          ...prev,
+          {
+            id: Date.now(),
+            type: 'straight',
+            params: { length: dist / 2 },
+            x: pt1.x,
+            y: pt1.y,
+            rotation: angle
+          }
+        ]);
+        setTimeout(() => setAutoFillPoints([]), 200);
+      }, 150);
     }
   }
 
@@ -1302,9 +1374,25 @@ export default function Home() {
           cursor: 'pointer',
           boxShadow: isMeasuring ? '0 2px 8px rgba(245,158,66,0.18)' : '0 2px 8px rgba(0,0,0,0.08)'
         },
-        onClick: startMeasure,
+        onClick: () => { setIsMeasuring(true); setMeasurePoints([]); setIsAutoFill(false); setAutoFillPoints([]); },
         title: isMeasuring ? '依次点击两个吸附点' : '点击后可测量两个吸附点间距离'
-      }, isMeasuring ? (measurePoints.length === 1 ? '再点一个吸附点' : '点击吸附点') : '测量距离')
+      }, isMeasuring ? (measurePoints.length === 1 ? '再点一个吸附点' : '点击吸附点') : '测量距离'),
+      React.createElement('button', {
+        key: 'autofill-btn',
+        style: {
+          background: isAutoFill ? '#3b82f6' : '#fff',
+          color: isAutoFill ? '#fff' : '#333',
+          border: '1.5px solid #3b82f6',
+          borderRadius: 6,
+          padding: '6px 16px',
+          fontWeight: 600,
+          fontSize: 16,
+          cursor: 'pointer',
+          boxShadow: isAutoFill ? '0 2px 8px rgba(59,130,246,0.18)' : '0 2px 8px rgba(0,0,0,0.08)'
+        },
+        onClick: () => { setIsAutoFill(true); setAutoFillPoints([]); setIsMeasuring(false); setMeasurePoints([]); },
+        title: isAutoFill ? '依次点击两个吸附点' : '点击后可自动补全直道'
+      }, isAutoFill ? (autoFillPoints.length === 1 ? '再点一个吸附点' : '点击吸附点') : '自动补全直道'),
     ]),
 
     // 右下角悬浮缩略图
@@ -2127,8 +2215,8 @@ export default function Home() {
                 fill: '#10b981',
                 stroke: '#065f46',
                 strokeWidth: 1,
-                style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
-                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'start' }) } : undefined
+                style: { cursor: (isMeasuring || isAutoFill) ? 'crosshair' : 'not-allowed', opacity: (isMeasuring || isAutoFill) ? 1 : 0.5 },
+                onClick: (isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'start' }) } : (isAutoFill ? (e) => { e.stopPropagation(); handleAutoFillPointClick({ pieceId: piece.id, type: 'start' }) } : undefined))
               }),
               React.createElement('circle', {
                 key: 'end',
@@ -2138,8 +2226,8 @@ export default function Home() {
                 fill: '#dc2626',
                 stroke: '#7f1d1d',
                 strokeWidth: 1,
-                style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
-                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'end' }) } : undefined
+                style: { cursor: (isMeasuring || isAutoFill) ? 'crosshair' : 'not-allowed', opacity: (isMeasuring || isAutoFill) ? 1 : 0.5 },
+                onClick: (isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'end' }) } : (isAutoFill ? (e) => { e.stopPropagation(); handleAutoFillPointClick({ pieceId: piece.id, type: 'end' }) } : undefined))
               })
             ])
           } else if (piece.type === 'curve') {
@@ -2209,8 +2297,8 @@ export default function Home() {
                 fill: '#10b981',
                 stroke: '#065f46',
                 strokeWidth: 1,
-                style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
-                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'start' }) } : undefined
+                style: { cursor: (isMeasuring || isAutoFill) ? 'crosshair' : 'not-allowed', opacity: (isMeasuring || isAutoFill) ? 1 : 0.5 },
+                onClick: (isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'start' }) } : (isAutoFill ? (e) => { e.stopPropagation(); handleAutoFillPointClick({ pieceId: piece.id, type: 'start' }) } : undefined))
               }),
               React.createElement('circle', {
                 key: 'end',
@@ -2220,8 +2308,8 @@ export default function Home() {
                 fill: '#dc2626',
                 stroke: '#7f1d1d',
                 strokeWidth: 1,
-                style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
-                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'end' }) } : undefined
+                style: { cursor: (isMeasuring || isAutoFill) ? 'crosshair' : 'not-allowed', opacity: (isMeasuring || isAutoFill) ? 1 : 0.5 },
+                onClick: (isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'end' }) } : (isAutoFill ? (e) => { e.stopPropagation(); handleAutoFillPointClick({ pieceId: piece.id, type: 'end' }) } : undefined))
               })
             ])
           }
@@ -2229,7 +2317,7 @@ export default function Home() {
         }),
 
         // 测量结果渲染
-        (measurePoints.length === 2) && (() => {
+  (measurePoints.length === 2 && isMeasuring) && (() => {
           // 根据pieceId和type查找当前最新坐标
           const getPointCoord = (mp: { pieceId: number, type: 'start' | 'end' }) => {
             const piece = pieces.find(p => p.id === mp.pieceId)
