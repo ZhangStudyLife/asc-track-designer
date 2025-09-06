@@ -1,9 +1,38 @@
-'use client'
 
+'use client'
 import React from 'react'
+
+// ...existing code...
 
 // SolidWorks风格赛道设计器 - 增强版
 export default function Home() {
+  // 测量吸附点距离相关状态
+  const [isMeasuring, setIsMeasuring] = React.useState(false)
+  const [measurePoints, setMeasurePoints] = React.useState<{x: number, y: number}[]>([])
+
+  // 计算两点距离
+  const getDistance = (a: {x: number, y: number}, b: {x: number, y: number}) => {
+    return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)
+  }
+
+  // 吸附点点击事件
+  const handleMeasurePointClick = (pt: {x: number, y: number}) => {
+    if (!isMeasuring) return;
+    if (measurePoints.length === 0) {
+      setMeasurePoints([pt]);
+    } else if (measurePoints.length === 1) {
+      // 第二个点
+      setMeasurePoints(prev => [prev[0], pt]);
+      setTimeout(() => setIsMeasuring(false), 100); // 测量完成后自动退出测量模式
+    }
+  }
+
+  // 启动测量
+  const startMeasure = () => {
+    setIsMeasuring(true)
+    setMeasurePoints([])
+  }
+
   // 缩略图拖拽视口框相关状态
   const [draggingMini, setDraggingMini] = React.useState(false);
   const miniDragOffset = React.useRef({ x: 0, y: 0 });
@@ -1248,6 +1277,34 @@ export default function Home() {
           }, '实验室内部专用工具')
         ])
       ]),
+    // 工具栏右侧功能按钮区（含测量按钮）
+    React.createElement('div', {
+      key: 'toolbar-actions',
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        marginLeft: 'auto'
+      }
+    }, [
+      React.createElement('button', {
+        key: 'measure-btn',
+        style: {
+          background: isMeasuring ? '#f59e42' : '#fff',
+          color: isMeasuring ? '#fff' : '#333',
+          border: '1.5px solid #f59e42',
+          borderRadius: 6,
+          padding: '6px 16px',
+          fontWeight: 600,
+          fontSize: 16,
+          cursor: 'pointer',
+          boxShadow: isMeasuring ? '0 2px 8px rgba(245,158,66,0.18)' : '0 2px 8px rgba(0,0,0,0.08)'
+        },
+        onClick: startMeasure,
+        title: isMeasuring ? '依次点击两个吸附点' : '点击后可测量两个吸附点间距离'
+      }, isMeasuring ? (measurePoints.length === 1 ? '再点一个吸附点' : '点击吸附点') : '测量距离')
+    ]),
+
     // 右下角悬浮缩略图
     React.createElement('div', {
       key: 'mini-map',
@@ -2026,12 +2083,13 @@ export default function Home() {
         // 渲染赛道元件 - 支持多选高亮
         ...pieces.map(piece => {
           const isSelected = piece.id === selectedId || selectedIds.includes(piece.id)
-          
           if (piece.type === 'straight') {
             const length = piece.params.length * 2
             const width = 45 * 2
-            
-            return React.createElement('g', { 
+            // 直线段的两个吸附点
+            const startPoint = { x: piece.x, y: piece.y }
+            const endPoint = { x: piece.x + length * Math.cos((piece.rotation || 0) * Math.PI / 180), y: piece.y + length * Math.sin((piece.rotation || 0) * Math.PI / 180) }
+            return React.createElement('g', {
               key: piece.id,
               transform: `translate(${piece.x}, ${piece.y}) rotate(${piece.rotation || 0})`
             }, [
@@ -2051,14 +2109,14 @@ export default function Home() {
               React.createElement('text', {
                 key: 'text',
                 x: length/2,
-                y: 5, // 显示在赛道中心
+                y: 5,
                 textAnchor: 'middle',
                 fontSize: '16px',
-                fill: '#ffff00', // 黄色文字，与图片一致
+                fill: '#ffff00',
                 fontWeight: 'bold',
                 style: { userSelect: 'none' }
               }, `L${piece.params.length}`),
-              // 连接点
+              // 连接点（吸附点）
               React.createElement('circle', {
                 key: 'start',
                 cx: 0,
@@ -2066,7 +2124,9 @@ export default function Home() {
                 r: 4,
                 fill: '#10b981',
                 stroke: '#065f46',
-                strokeWidth: 1
+                strokeWidth: 1,
+                style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
+                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick(startPoint) } : undefined
               }),
               React.createElement('circle', {
                 key: 'end',
@@ -2075,42 +2135,43 @@ export default function Home() {
                 r: 4,
                 fill: '#dc2626',
                 stroke: '#7f1d1d',
-                strokeWidth: 1
+                strokeWidth: 1,
+                style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
+                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick(endPoint) } : undefined
               })
             ])
           } else if (piece.type === 'curve') {
-            // R50-90意味着：赛道中心线到圆心距离50cm，圆心角90°
-            const centerRadius = piece.params.radius * 2 // 中心线半径
+            const centerRadius = piece.params.radius * 2
             const trackWidth = 45 * 2
             const angleRad = (piece.params.angle * Math.PI) / 180
-            
-            const innerRadius = centerRadius - trackWidth / 2
-            const outerRadius = centerRadius + trackWidth / 2
-            
-            const x1 = innerRadius
-            const y1 = 0
-            const x2 = outerRadius
-            const y2 = 0
-            const x3 = outerRadius * Math.cos(angleRad)
-            const y3 = outerRadius * Math.sin(angleRad)
-            const x4 = innerRadius * Math.cos(angleRad)
-            const y4 = innerRadius * Math.sin(angleRad)
-            
             // 中心线上的连接点
             const centerX1 = centerRadius
             const centerY1 = 0
             const centerX2 = centerRadius * Math.cos(angleRad)
             const centerY2 = centerRadius * Math.sin(angleRad)
-            
+            // 绝对坐标
+            const startPoint = { x: piece.x + centerX1 * Math.cos((piece.rotation || 0) * Math.PI / 180) - centerY1 * Math.sin((piece.rotation || 0) * Math.PI / 180), y: piece.y + centerX1 * Math.sin((piece.rotation || 0) * Math.PI / 180) + centerY1 * Math.cos((piece.rotation || 0) * Math.PI / 180) }
+            const endPoint = { x: piece.x + centerX2 * Math.cos((piece.rotation || 0) * Math.PI / 180) - centerY2 * Math.sin((piece.rotation || 0) * Math.PI / 180), y: piece.y + centerX2 * Math.sin((piece.rotation || 0) * Math.PI / 180) + centerY2 * Math.cos((piece.rotation || 0) * Math.PI / 180) }
             const largeArcFlag = piece.params.angle > 180 ? 1 : 0
-            
-            return React.createElement('g', { 
+            return React.createElement('g', {
               key: piece.id,
               transform: `translate(${piece.x}, ${piece.y}) rotate(${piece.rotation || 0})`
             }, [
               React.createElement('path', {
                 key: 'path',
-                d: `M ${x1} ${y1} L ${x2} ${y2} A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 1 ${x3} ${y3} L ${x4} ${y4} A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${x1} ${y1}`,
+                d: (() => {
+                  const innerRadius = centerRadius - trackWidth / 2
+                  const outerRadius = centerRadius + trackWidth / 2
+                  const x1 = innerRadius
+                  const y1 = 0
+                  const x2 = outerRadius
+                  const y2 = 0
+                  const x3 = outerRadius * Math.cos(angleRad)
+                  const y3 = outerRadius * Math.sin(angleRad)
+                  const x4 = innerRadius * Math.cos(angleRad)
+                  const y4 = innerRadius * Math.sin(angleRad)
+                  return `M ${x1} ${y1} L ${x2} ${y2} A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 1 ${x3} ${y3} L ${x4} ${y4} A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${x1} ${y1}`
+                })(),
                 fill: '#1f2937',
                 stroke: isSelected ? '#ef4444' : '#6b7280',
                 strokeWidth: isSelected ? 3 : 1,
@@ -2118,7 +2179,6 @@ export default function Home() {
                 onMouseDown: (e) => handleMouseDown(e, piece),
                 onDoubleClick: () => handleDoubleClick(piece)
               }),
-              // 显示圆心
               React.createElement('circle', {
                 key: 'center',
                 cx: 0,
@@ -2130,15 +2190,15 @@ export default function Home() {
               }),
               React.createElement('text', {
                 key: 'text',
-                x: centerRadius * Math.cos(angleRad/2), // 在赛道中心线上
-                y: centerRadius * Math.sin(angleRad/2), // 在赛道中心线上
+                x: centerRadius * Math.cos(angleRad/2),
+                y: centerRadius * Math.sin(angleRad/2),
                 textAnchor: 'middle',
                 fontSize: '16px',
-                fill: '#ffff00', // 黄色文字，与图片一致
+                fill: '#ffff00',
                 fontWeight: 'bold',
                 style: { userSelect: 'none' }
               }, `R${piece.params.radius}-${piece.params.angle}`),
-              // 连接点在赛道中心线上
+              // 连接点（吸附点）
               React.createElement('circle', {
                 key: 'start',
                 cx: centerX1,
@@ -2146,7 +2206,9 @@ export default function Home() {
                 r: 4,
                 fill: '#10b981',
                 stroke: '#065f46',
-                strokeWidth: 1
+                strokeWidth: 1,
+                style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
+                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick(startPoint) } : undefined
               }),
               React.createElement('circle', {
                 key: 'end',
@@ -2155,12 +2217,76 @@ export default function Home() {
                 r: 4,
                 fill: '#dc2626',
                 stroke: '#7f1d1d',
-                strokeWidth: 1
+                strokeWidth: 1,
+                style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
+                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick(endPoint) } : undefined
               })
             ])
           }
           return null
         }),
+
+        // 测量结果渲染
+        (measurePoints.length === 2) && React.createElement(React.Fragment, { key: 'measure-result' }, [
+          React.createElement('line', {
+            key: 'measure-line',
+            x1: measurePoints[0].x,
+            y1: measurePoints[0].y,
+            x2: measurePoints[1].x,
+            y2: measurePoints[1].y,
+            stroke: '#f59e42',
+            strokeWidth: 3,
+            strokeDasharray: '6,3'
+          }),
+          React.createElement('circle', {
+            key: 'measure-point-1',
+            cx: measurePoints[0].x,
+            cy: measurePoints[0].y,
+            r: 7,
+            fill: 'none',
+            stroke: '#f59e42',
+            strokeWidth: 2
+          }),
+          React.createElement('circle', {
+            key: 'measure-point-2',
+            cx: measurePoints[1].x,
+            cy: measurePoints[1].y,
+            r: 7,
+            fill: 'none',
+            stroke: '#f59e42',
+            strokeWidth: 2
+          }),
+          React.createElement('text', {
+            key: 'measure-text',
+            x: (measurePoints[0].x + measurePoints[1].x) / 2,
+            y: (measurePoints[0].y + measurePoints[1].y) / 2 - 10,
+            textAnchor: 'middle',
+            fontSize: '20px',
+            fill: '#f59e42',
+            fontWeight: 'bold',
+            style: { userSelect: 'none', textShadow: '1px 1px 2px #fff' }
+          }, `${(getDistance(measurePoints[0], measurePoints[1]) / 2).toFixed(1)} mm`)
+        ]),
+      // 测量按钮（可放在画布左上角）
+      React.createElement('button', {
+        key: 'measure-btn',
+        style: {
+          position: 'absolute',
+          left: 20,
+          top: 20,
+          zIndex: 10,
+          background: isMeasuring ? '#f59e42' : '#fff',
+          color: isMeasuring ? '#fff' : '#333',
+          border: '1.5px solid #f59e42',
+          borderRadius: 6,
+          padding: '6px 16px',
+          fontWeight: 600,
+          fontSize: 16,
+          cursor: 'pointer',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+        },
+        onClick: startMeasure
+      }, isMeasuring ? '点击吸附点（第2个）' : '测量距离'),
         
         // 选择框显示 - 优化样式和精度
         selectionBox ? React.createElement('rect', {
