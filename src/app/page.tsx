@@ -8,7 +8,8 @@ import React from 'react'
 export default function Home() {
   // 测量吸附点距离相关状态
   const [isMeasuring, setIsMeasuring] = React.useState(false)
-  const [measurePoints, setMeasurePoints] = React.useState<{x: number, y: number}[]>([])
+  // 记录测量点为 { pieceId, type: 'start'|'end' }
+  const [measurePoints, setMeasurePoints] = React.useState<{ pieceId: number, type: 'start' | 'end' }[]>([])
 
   // 计算两点距离
   const getDistance = (a: {x: number, y: number}, b: {x: number, y: number}) => {
@@ -16,14 +17,15 @@ export default function Home() {
   }
 
   // 吸附点点击事件
-  const handleMeasurePointClick = (pt: {x: number, y: number}) => {
+  // 点击吸附点时传入pieceId和点类型
+  const handleMeasurePointClick = (info: { pieceId: number, type: 'start' | 'end' }) => {
     if (!isMeasuring) return;
     if (measurePoints.length === 0) {
-      setMeasurePoints([pt]);
+      setMeasurePoints([info]);
     } else if (measurePoints.length === 1) {
       // 第二个点
-      setMeasurePoints(prev => [prev[0], pt]);
-      setTimeout(() => setIsMeasuring(false), 100); // 测量完成后自动退出测量模式
+      setMeasurePoints(prev => [prev[0], info]);
+      setTimeout(() => setIsMeasuring(false), 100);
     }
   }
 
@@ -2126,7 +2128,7 @@ export default function Home() {
                 stroke: '#065f46',
                 strokeWidth: 1,
                 style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
-                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick(startPoint) } : undefined
+                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'start' }) } : undefined
               }),
               React.createElement('circle', {
                 key: 'end',
@@ -2137,7 +2139,7 @@ export default function Home() {
                 stroke: '#7f1d1d',
                 strokeWidth: 1,
                 style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
-                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick(endPoint) } : undefined
+                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'end' }) } : undefined
               })
             ])
           } else if (piece.type === 'curve') {
@@ -2208,7 +2210,7 @@ export default function Home() {
                 stroke: '#065f46',
                 strokeWidth: 1,
                 style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
-                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick(startPoint) } : undefined
+                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'start' }) } : undefined
               }),
               React.createElement('circle', {
                 key: 'end',
@@ -2219,7 +2221,7 @@ export default function Home() {
                 stroke: '#7f1d1d',
                 strokeWidth: 1,
                 style: { cursor: isMeasuring ? 'crosshair' : 'not-allowed', opacity: isMeasuring ? 1 : 0.5 },
-                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick(endPoint) } : undefined
+                onClick: isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'end' }) } : undefined
               })
             ])
           }
@@ -2227,46 +2229,85 @@ export default function Home() {
         }),
 
         // 测量结果渲染
-        (measurePoints.length === 2) && React.createElement(React.Fragment, { key: 'measure-result' }, [
-          React.createElement('line', {
-            key: 'measure-line',
-            x1: measurePoints[0].x,
-            y1: measurePoints[0].y,
-            x2: measurePoints[1].x,
-            y2: measurePoints[1].y,
-            stroke: '#f59e42',
-            strokeWidth: 3,
-            strokeDasharray: '6,3'
-          }),
-          React.createElement('circle', {
-            key: 'measure-point-1',
-            cx: measurePoints[0].x,
-            cy: measurePoints[0].y,
-            r: 7,
-            fill: 'none',
-            stroke: '#f59e42',
-            strokeWidth: 2
-          }),
-          React.createElement('circle', {
-            key: 'measure-point-2',
-            cx: measurePoints[1].x,
-            cy: measurePoints[1].y,
-            r: 7,
-            fill: 'none',
-            stroke: '#f59e42',
-            strokeWidth: 2
-          }),
-          React.createElement('text', {
-            key: 'measure-text',
-            x: (measurePoints[0].x + measurePoints[1].x) / 2,
-            y: (measurePoints[0].y + measurePoints[1].y) / 2 - 10,
-            textAnchor: 'middle',
-            fontSize: '20px',
-            fill: '#f59e42',
-            fontWeight: 'bold',
-            style: { userSelect: 'none', textShadow: '1px 1px 2px #fff' }
-          }, `${(getDistance(measurePoints[0], measurePoints[1]) / 2).toFixed(1)} mm`)
-        ]),
+        (measurePoints.length === 2) && (() => {
+          // 根据pieceId和type查找当前最新坐标
+          const getPointCoord = (mp: { pieceId: number, type: 'start' | 'end' }) => {
+            const piece = pieces.find(p => p.id === mp.pieceId)
+            if (!piece) return { x: 0, y: 0 }
+            if (piece.type === 'straight') {
+              const length = piece.params.length * 2
+              if (mp.type === 'start') {
+                return { x: piece.x, y: piece.y }
+              } else {
+                return {
+                  x: piece.x + length * Math.cos((piece.rotation || 0) * Math.PI / 180),
+                  y: piece.y + length * Math.sin((piece.rotation || 0) * Math.PI / 180)
+                }
+              }
+            } else if (piece.type === 'curve') {
+              const centerRadius = piece.params.radius * 2
+              const angleRad = (piece.params.angle * Math.PI) / 180
+              if (mp.type === 'start') {
+                const cx = centerRadius
+                const cy = 0
+                return {
+                  x: piece.x + cx * Math.cos((piece.rotation || 0) * Math.PI / 180) - cy * Math.sin((piece.rotation || 0) * Math.PI / 180),
+                  y: piece.y + cx * Math.sin((piece.rotation || 0) * Math.PI / 180) + cy * Math.cos((piece.rotation || 0) * Math.PI / 180)
+                }
+              } else {
+                const cx = centerRadius * Math.cos(angleRad)
+                const cy = centerRadius * Math.sin(angleRad)
+                return {
+                  x: piece.x + cx * Math.cos((piece.rotation || 0) * Math.PI / 180) - cy * Math.sin((piece.rotation || 0) * Math.PI / 180),
+                  y: piece.y + cx * Math.sin((piece.rotation || 0) * Math.PI / 180) + cy * Math.cos((piece.rotation || 0) * Math.PI / 180)
+                }
+              }
+            }
+            return { x: 0, y: 0 }
+          }
+          const pt1 = getPointCoord(measurePoints[0])
+          const pt2 = getPointCoord(measurePoints[1])
+          return React.createElement(React.Fragment, { key: 'measure-result' }, [
+            React.createElement('line', {
+              key: 'measure-line',
+              x1: pt1.x,
+              y1: pt1.y,
+              x2: pt2.x,
+              y2: pt2.y,
+              stroke: '#f59e42',
+              strokeWidth: 3,
+              strokeDasharray: '6,3'
+            }),
+            React.createElement('circle', {
+              key: 'measure-point-1',
+              cx: pt1.x,
+              cy: pt1.y,
+              r: 7,
+              fill: 'none',
+              stroke: '#f59e42',
+              strokeWidth: 2
+            }),
+            React.createElement('circle', {
+              key: 'measure-point-2',
+              cx: pt2.x,
+              cy: pt2.y,
+              r: 7,
+              fill: 'none',
+              stroke: '#f59e42',
+              strokeWidth: 2
+            }),
+            React.createElement('text', {
+              key: 'measure-text',
+              x: (pt1.x + pt2.x) / 2,
+              y: (pt1.y + pt2.y) / 2 - 10,
+              textAnchor: 'middle',
+              fontSize: '20px',
+              fill: '#f59e42',
+              fontWeight: 'bold',
+              style: { userSelect: 'none', textShadow: '1px 1px 2px #fff' }
+            }, `${(getDistance(pt1, pt2) / 2).toFixed(1)} mm`)
+          ])
+        })(),
       // 测量按钮（可放在画布左上角）
       React.createElement('button', {
         key: 'measure-btn',
