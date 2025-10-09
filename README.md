@@ -8,6 +8,8 @@
 
 **专业的智能车赛道布局设计工具**### 🚀 第一次使用（只需要做一次）
 
+<img width="1536" height="1024" alt="Track" src="https://github.com/user-attachments/assets/3c7661fb-6d03-4d61-8e7d-988ce9f625fe" />
+
 
 
 [![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/ZhangStudyLife/asc-track-designer)1. **下载Node.js**（如果电脑没有的话）
