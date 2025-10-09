@@ -1,6 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'export',
   reactStrictMode: true,
+  // 移除 basePath 和 assetPrefix，让 Next.js 使用默认行为
+  images: {
+    unoptimized: true,
+  },
+  // 禁用 trailing slash
+  trailingSlash: false,
   webpack: (config, { isServer }) => {
     // 忽略服务器端的canvas模块
     if (isServer) {

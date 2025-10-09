@@ -1,53 +1,61 @@
-# Node
+# Dependencies
 node_modules/
 npm-debug.log
 yarn-error.log
+package-lock.json
 
 # Build output
 .next/
 out/
 dist/
+release/
 build/
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# VSCode
+# Editor
 .vscode/
-
-# Env
-.env*
-
-# Log
-*.log
-
-# Test
-coverage/
-
-# Misc
+.idea/
+*.iml
 *.swp
 *.swo
+
+# Environment variables
+.env*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
 *.tmp
 *.bak
 *.orig
-
-# Mac
-Icon?
-
-# Windows
-*.lnk
-
-# Editor
-.idea/
-*.iml
-
-# Process/Temp files
 *.cache
 *.pid
 *.seed
 *.tgz
 *.gz
+
+# Python virtual environment
+.venv/
+venv/
+__pycache__/
+
+# Windows shortcuts
+*.lnk
+
+# Electron build artifacts
+temp-check/
+temp-asar/
 *.zip
 *.tar
 *.tar.gz

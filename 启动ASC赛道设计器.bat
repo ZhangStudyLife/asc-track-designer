@@ -30,7 +30,7 @@ if not exist node_modules (
     echo  📦 首次运行，正在安装依赖包...
     echo  ⏳ 这可能需要几分钟时间，请耐心等待...
     echo.
-    npm install
+    call npm install
     if errorlevel 1 (
         echo  ❌ 依赖包安装失败
         pause
@@ -43,13 +43,13 @@ if not exist node_modules (
 echo  🚀 正在启动ASC赛道设计器...
 echo.
 echo  ========================================
-echo  📍 启动完成后将自动在浏览器中打开
-echo  🌐 手动访问: http://localhost:3000
-echo  🛑 按 Ctrl+C 可停止服务器
+echo  📍 启动完成后将在 Electron 窗口中打开
+echo  🌐 Web访问地址: http://localhost:3000
+echo  🛑 关闭窗口即可停止应用
 echo  ========================================
 echo.
 
-:: 启动开发服务器
-npm run dev
+:: 启动开发服务器（Next.js + Electron）
+call npm run dev
 
 pause

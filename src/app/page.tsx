@@ -27,7 +27,8 @@ export default function Home() {
       setMeasurePoints([info]);
     } else if (measurePoints.length === 1) {
       setMeasurePoints(prev => [prev[0], info]);
-      setTimeout(() => setIsMeasuring(false), 100);
+      // 测量完成后关闭测量模式，但保留测量结果显示
+      setIsMeasuring(false);
     }
   }
 
@@ -1504,13 +1505,13 @@ export default function Home() {
         minWidth: 190,
         minHeight: 100
       }
-    }, [
+    }, 
       renderMiniMap({
         onMiniMouseDown: handleMiniMouseDown,
         onMiniMouseMove: handleMiniMouseMove,
         onMiniMouseUp: handleMiniMouseUp,
       })
-    ]),
+    ),
       
       React.createElement('h1', {
         key: 'old-title',
@@ -1526,7 +1527,7 @@ export default function Home() {
           React.createElement('div', {
             key: 'str25-group',
             style: { display: 'flex', alignItems: 'center', gap: '2px' }
-          }, [
+          }, 
             React.createElement('button', {
               key: 'str25',
               onClick: () => addPiece('straight', { length: 25 }),
@@ -1554,7 +1555,7 @@ export default function Home() {
                 fontSize: '12px'
               }
             }, '×')
-          ])
+          )
         ] : []),
 
         // L37.5直道按钮
@@ -2406,8 +2407,8 @@ export default function Home() {
           return null
         }),
 
-        // 测量结果渲染
-  (measurePoints.length === 2 && isMeasuring) && (() => {
+        // 测量结果渲染（即使测量模式关闭，只要有两个点就显示）
+  (measurePoints.length === 2) && (() => {
           // 根据pieceId和type查找当前最新坐标
           const getPointCoord = (mp: { pieceId: number, type: 'start' | 'end' }) => {
             const piece = pieces.find(p => p.id === mp.pieceId)

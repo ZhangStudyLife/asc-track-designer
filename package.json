@@ -4,29 +4,95 @@
   "description": "ASC实验室智能车赛道设计器 - 专业的赛道布局设计工具",
   "private": true,
   "author": "ASC实验室",
-  "keywords": ["智能车", "赛道设计", "ASC", "实验室工具"],
+  "keywords": [
+    "智能车",
+    "赛道设计",
+    "ASC",
+    "实验室工具"
+  ],
+  "main": "electron.js",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "build:web": "next build",
+    "build:electron": "npm run build:web",
+    "start": "electron .",
+    "dist": "npm run build:electron && electron-builder",
+    "dist:win": "npm run build:electron && electron-builder --win --x64",
     "lint": "next lint"
   },
-  "dependencies": {
-    "konva": "^9.3.14",
-    "next": "15.0.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-konva": "^18.2.10"
+  "build": {
+    "appId": "com.asc.trackdesigner",
+    "productName": "ASC赛道设计器",
+    "copyright": "Copyright © 2024 ASC实验室",
+    "asar": true,
+    "icon": "public/icon.ico",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ASC赛道设计器",
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico"
+    },
+    "files": [
+      "out/**/*",
+      "electron.js",
+      "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "public",
+        "to": "public",
+        "filter": ["**/*"]
+      }
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "public"
+    },
+    "extraMetadata": {
+      "main": "electron.js"
+    }
   },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^20.17.9",
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.3.7",
     "autoprefixer": "^10.4.16",
+    "concurrently": "^8.2.2",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
     "eslint": "^8.57.1",
     "eslint-config-next": "15.0.3",
+    "konva": "^9.3.14",
+    "next": "15.0.3",
     "postcss": "^8.4.49",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-konva": "^18.2.10",
     "tailwindcss": "^3.4.14",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "wait-on": "^7.2.0"
   }
 }

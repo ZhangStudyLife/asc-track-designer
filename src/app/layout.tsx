@@ -1,7 +1,6 @@
-import type { Metadata } from 'next'
 import './globals.css'
 
-export const metadata: Metadata = {
+export const metadata = {
   title: '智能车赛道绘制系统',
   description: '基于React + Konva.js的智能车赛道设计工具，支持拖拽、自动吸附和精确尺寸计算',
 }
@@ -13,6 +12,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN">
+      <head>
+        <title>{metadata.title}</title>
+        <meta name="description" content={metadata.description} />
+      </head>
       <body>{children}</body>
     </html>
   )
