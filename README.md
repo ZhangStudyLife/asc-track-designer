@@ -1,13 +1,7 @@
-# 🏎️ ASC 智能车赛道设计器# 🎯 ASC赛道设计器 - 超简单使用指南
+# 🏎️ ASC 智能车赛道设计器
 
 
-
-<div align="center">## 😊 给朋友的使用说明（不需要懂技术）
-
-
-
-**专业的智能车赛道布局设计工具**### 🚀 第一次使用（只需要做一次）
-
+**专业的智能车赛道布局设计工具**
 <img width="1536" height="1024" alt="Track" src="https://github.com/user-attachments/assets/3c7661fb-6d03-4d61-8e7d-988ce9f625fe" />
 
 
