@@ -90,3 +90,4 @@ pnpm-lock.yaml
 
 # 忽略所有过程/中间文件
 !.gitignore
+!.npmrc

@@ -13,12 +13,17 @@
   "main": "electron.js",
   "scripts": {
     "dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "build": "next build",
     "build:web": "next build",
-    "build:electron": "npm run build:web",
+    "build:export": "next build && next export",
+    "build:electron": "next build",
     "start": "electron .",
+    "start:next": "next start",
     "dist": "npm run build:electron && electron-builder",
     "dist:win": "npm run build:electron && electron-builder --win --x64",
-    "lint": "next lint"
+    "lint": "next lint",
+    "clean": "rimraf .next out release node_modules",
+    "reinstall": "npm run clean && npm install"
   },
   "build": {
     "appId": "com.asc.trackdesigner",
@@ -80,9 +85,9 @@
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.3.7",
     "autoprefixer": "^10.4.16",
-    "concurrently": "^8.2.2",
+    "concurrently": "^9.1.0",
     "electron": "^28.3.3",
-    "electron-builder": "^24.13.3",
+    "electron-builder": "^25.1.8",
     "eslint": "^8.57.1",
     "eslint-config-next": "15.0.3",
     "konva": "^9.3.14",
@@ -93,6 +98,6 @@
     "react-konva": "^18.2.10",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
-    "wait-on": "^7.2.0"
+    "wait-on": "^8.0.1"
   }
 }
