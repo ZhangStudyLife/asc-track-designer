@@ -1,8 +1,8 @@
 # Dependencies
 node_modules/
-npm-debug.log
-yarn-error.log
 package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Build output
 .next/
@@ -11,83 +11,43 @@ dist/
 release/
 build/
 
-# OS files
-.DS_Store
-Thumbs.db
-Desktop.ini
-
-# Editor
-.vscode/
-.idea/
-*.iml
-*.swp
-*.swo
-
-# Environment variables
+# Environment
 .env*
 !.env.example
 
 # Logs
 *.log
 logs/
+npm-debug.log
+yarn-error.log
 
-# Test coverage
-coverage/
-.nyc_output/
+# Editors
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
 
-# Temporary files
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files and archives
 *.tmp
+*.temp
 *.bak
 *.orig
+*.old
 *.cache
 *.pid
+*.pid.lock
 *.seed
-*.tgz
-*.gz
-
-# Python virtual environment
-.venv/
-venv/
-__pycache__/
-
-# Windows shortcuts
-*.lnk
-
-# Electron build artifacts
-temp-check/
-temp-asar/
 *.zip
 *.tar
 *.tar.gz
 *.tgz
-*.tmp
-*.temp
-*.bak
-*.old
-*.swp
-*.swo
-*.swn
-*.tmp
-*.log
-*.lock
-*.pid
-*.seed
-*.pid.lock
 
-# Local archives
-*.tgz
-
-# npm package
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-
-# Next.js
-.next/
-
-# Output of 'npm pack'
-*.tgz
-
-# 忽略所有过程/中间文件
-!.gitignore
-!.npmrc
+# Coverage
+coverage/
+.nyc_output/

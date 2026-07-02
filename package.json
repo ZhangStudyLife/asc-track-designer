@@ -14,16 +14,12 @@
   "scripts": {
     "dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
     "build": "next build",
-    "build:web": "next build",
-    "build:export": "next build && next export",
-    "build:electron": "next build",
     "start": "electron .",
     "start:next": "next start",
-    "dist": "npm run build:electron && electron-builder",
-    "dist:win": "npm run build:electron && electron-builder --win --x64",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win --x64",
     "lint": "next lint",
-    "clean": "rimraf .next out release node_modules",
-    "reinstall": "npm run clean && npm install"
+    "clean": "rimraf .next out release node_modules"
   },
   "build": {
     "appId": "com.asc.trackdesigner",
