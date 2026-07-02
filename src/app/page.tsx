@@ -1,5 +1,18 @@
 "use client"
 import React from 'react'
+import { MiniMap } from '../components/track/MiniMap'
+import { TrackCanvas } from '../components/track/TrackCanvas'
+import {
+  findNearestConnectionPoint as findNearestConnectionPointForPieces,
+  getConnectionPoint,
+  getConnectionPoints as getTrackConnectionPoints,
+  getDistance,
+  SNAP_DISTANCE,
+} from '../features/track/geometry'
+import { parseTrackCode } from '../features/track/parser'
+import { calculateTrackStats as calculateStatsForPieces } from '../features/track/stats'
+import { pushPiecesHistory, readPiecesHistory, writePiecesHistory } from '../features/track/storage'
+import type { ConnectionPointRef, TrackPiece } from '../features/track/types'
 
 export default function Home() {
   // 拖动状态
@@ -8,20 +21,17 @@ export default function Home() {
   // 测量吸附点距离相关状态
   const [isMeasuring, setIsMeasuring] = React.useState(false)
   // 记录测量点为 { pieceId, type: 'start'|'end' }
-  const [measurePoints, setMeasurePoints] = React.useState<{ pieceId: number, type: 'start' | 'end' }[]>([])
+  const [measurePoints, setMeasurePoints] = React.useState<ConnectionPointRef[]>([])
   // 自动补全直道相关状态
   const [isAutoFill, setIsAutoFill] = React.useState(false)
-  const [autoFillPoints, setAutoFillPoints] = React.useState<{ pieceId: number, type: 'start' | 'end' }[]>([])
+  const [autoFillPoints, setAutoFillPoints] = React.useState<ConnectionPointRef[]>([])
 
   // 计算两点距离
-  const getDistance = (a: {x: number, y: number}, b: {x: number, y: number}) => {
-    return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)
-  }
 
   // 吸附点点击事件
   // 点击吸附点时传入pieceId和点类型
   // 测量模式下点击吸附点
-  const handleMeasurePointClick = (info: { pieceId: number, type: 'start' | 'end' }) => {
+  const handleMeasurePointClick = (info: ConnectionPointRef) => {
     if (!isMeasuring) return;
     if (measurePoints.length === 0) {
       setMeasurePoints([info]);
@@ -33,7 +43,7 @@ export default function Home() {
   }
 
   // 自动补全模式下点击吸附点
-  const handleAutoFillPointClick = (info: { pieceId: number, type: 'start' | 'end' }) => {
+  const handleAutoFillPointClick = (info: ConnectionPointRef) => {
     if (!isAutoFill) return;
     if (autoFillPoints.length === 0) {
       setAutoFillPoints([info]);
@@ -97,12 +107,7 @@ export default function Home() {
               rotation: angle
             }
           ];
-          let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
-          if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(next)) {
-            history.push(next);
-            if (history.length > 100) history = history.slice(-100);
-            localStorage.setItem('piecesHistory', JSON.stringify(history));
-          }
+          pushPiecesHistory(next);
           return next;
         });
         setTimeout(() => setAutoFillPoints([]), 200);
@@ -161,106 +166,7 @@ export default function Home() {
   const handleMiniMouseUp = () => {
     setDraggingMini(false);
   };
-
-  // 缩略图渲染函数
-
-  function renderMiniMap(props?: {
-    onMiniMouseDown?: (e: React.MouseEvent) => void;
-    onMiniMouseMove?: (e: React.MouseEvent) => void;
-    onMiniMouseUp?: (e: React.MouseEvent) => void;
-  }) {
-    // 视口框位置和尺寸直接用Home作用域变量（已声明）
-  const rectX = (viewBox.x - designX) * scaleX;
-  const rectY = (viewBox.y - designY) * scaleY;
-  const rectW = viewBox.width * scaleX;
-  const rectH = viewBox.height * scaleY;
-    // 事件绑定：SVG级别
-        return (
-          <svg
-            width={miniWidth}
-            height={miniHeight}
-            viewBox={`0 0 ${miniWidth} ${miniHeight}`}
-            style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 6, cursor: draggingMini ? 'grabbing' : 'pointer' }}
-            onMouseMove={props?.onMiniMouseMove}
-            onMouseUp={props?.onMiniMouseUp}
-            onMouseLeave={props?.onMiniMouseUp}
-            onMouseDown={props?.onMiniMouseDown}
-          >
-            {/* 赛道渲染，需将赛道坐标映射到缩略图坐标 */}
-            {pieces.map((piece) => {
-              if (piece.type === 'straight') {
-                const x1 = (piece.x - designX) * scaleX;
-                const y1 = (piece.y - designY) * scaleY;
-                const x2 = (piece.x + piece.params.length * Math.cos((piece.rotation || 0) * Math.PI / 180) - designX) * scaleX;
-                const y2 = (piece.y + piece.params.length * Math.sin((piece.rotation || 0) * Math.PI / 180) - designY) * scaleY;
-                return <line key={piece.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#6366f1" strokeWidth={4} strokeLinecap="round" />;
-              } else if (piece.type === 'curve') {
-                const r = piece.params.radius * 2;
-                const angle = piece.params.angle;
-                const rot = (piece.rotation || 0) * Math.PI / 180;
-                const cx = (piece.x - designX) * scaleX;
-                const cy = (piece.y - designY) * scaleY;
-                const startAngle = rot;
-                const endAngle = rot + angle * Math.PI / 180;
-                const x1 = cx + r * Math.cos(startAngle) * scaleX;
-                const y1 = cy + r * Math.sin(startAngle) * scaleY;
-                const x2 = cx + r * Math.cos(endAngle) * scaleX;
-                const y2 = cy + r * Math.sin(endAngle) * scaleY;
-                const largeArc = angle > 180 ? 1 : 0;
-                const d = `M${x1},${y1} A${r*scaleX},${r*scaleY} 0 ${largeArc} 1 ${x2},${y2}`;
-                return <path key={piece.id} d={d} stroke="#f59e42" strokeWidth={4} fill="none" />;
-              }
-              return null;
-            })}
-            {/* 当前视口区域框，可拖拽 */}
-            <rect
-              x={rectX}
-              y={rectY}
-              width={rectW}
-              height={rectH}
-              fill="none"
-              stroke="#ef4444"
-              strokeWidth={2.5}
-              strokeDasharray="6,3"
-              rx={3}
-              style={{ cursor: 'grab', pointerEvents: 'all' }}
-            />
-          </svg>
-        );
-  // 缩略图拖拽事件处理
-  const handleMiniMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setDraggingMini(true);
-    // 记录鼠标在红框内的偏移
-    const startX = e.nativeEvent.offsetX;
-    const startY = e.nativeEvent.offsetY;
-    const rectX = (viewBox.x - designX) * scaleX;
-    const rectY = (viewBox.y - designY) * scaleY;
-    miniDragOffset.current = {
-      x: startX - rectX,
-      y: startY - rectY
-    };
-    e.stopPropagation();
-  };
-  const handleMiniMouseMove = (e: React.MouseEvent) => {
-    if (!draggingMini) return;
-    const mouseX = e.nativeEvent.offsetX;
-    const mouseY = e.nativeEvent.offsetY;
-    let newRectX = mouseX - miniDragOffset.current.x;
-    let newRectY = mouseY - miniDragOffset.current.y;
-    const rectW = viewBox.width * scaleX;
-    const rectH = viewBox.height * scaleY;
-    newRectX = Math.max(0, Math.min(miniWidth - rectW, newRectX));
-    newRectY = Math.max(0, Math.min(miniHeight - rectH, newRectY));
-    const newViewBoxX = designX + newRectX / scaleX;
-    const newViewBoxY = designY + newRectY / scaleY;
-    setViewBox({ ...viewBox, x: newViewBoxX, y: newViewBoxY });
-  };
-  const handleMiniMouseUp = () => {
-    setDraggingMini(false);
-  };
-  }
-  const [pieces, setPieces] = React.useState<any[]>([])
+  const [pieces, setPieces] = React.useState<TrackPiece[]>([])
 
   // 每次 pieces 变化时自动记录历史快照（拖动时不入栈）
   const [viewBox, setViewBox] = React.useState({ 
@@ -307,10 +213,10 @@ export default function Home() {
         e.preventDefault();
         // 撤销逻辑：回退pieces到上一个状态
         setPieces(prev => {
-          const history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
+          const history = readPiecesHistory();
           if (history.length > 1) {
             history.pop();
-            localStorage.setItem('piecesHistory', JSON.stringify(history));
+            writePiecesHistory(history);
             setStatusMessage('撤销成功');
             setTimeout(() => setStatusMessage(''), 1000);
             return history[history.length - 1];
@@ -508,12 +414,7 @@ export default function Home() {
     
     setPieces(prev => {
       const next = [...prev, newPiece];
-      let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
-      if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(next)) {
-        history.push(next);
-        if (history.length > 100) history = history.slice(-100);
-        localStorage.setItem('piecesHistory', JSON.stringify(history));
-      }
+      pushPiecesHistory(next);
       return next;
     });
     setSelectedId(newPiece.id)
@@ -547,12 +448,7 @@ export default function Home() {
         rotation: 0, // 添加旋转角度
         params
       }];
-      let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
-      if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(next)) {
-        history.push(next);
-        if (history.length > 100) history = history.slice(-100);
-        localStorage.setItem('piecesHistory', JSON.stringify(history));
-      }
+      pushPiecesHistory(next);
       return next;
     });
   }
@@ -786,40 +682,7 @@ export default function Home() {
   }
 
   // BOM统计和赛道长度计算
-  const calculateTrackStats = () => {
-    // 统计各种赛道数量
-    const bomStats = {}
-    let totalLength = 0
-
-    pieces.forEach(piece => {
-      let pieceKey = ''
-      let pieceLength = 0
-
-      if (piece.type === 'straight') {
-        pieceKey = `L${piece.params.length}`
-        pieceLength = piece.params.length // 直道长度就是参数值(cm)
-      } else if (piece.type === 'curve') {
-        pieceKey = `R${piece.params.radius}-${piece.params.angle}`
-        // 弯道长度 = 半径 × 角度(弧度) = 半径 × (角度° × π / 180)
-        const radiusInCm = piece.params.radius
-        const angleInRadians = (piece.params.angle * Math.PI) / 180
-        pieceLength = radiusInCm * angleInRadians
-      }
-
-      // 统计数量
-      bomStats[pieceKey] = (bomStats[pieceKey] || 0) + 1
-      totalLength += pieceLength
-    })
-
-    // 转换为米并保留2位小数
-    const totalLengthInMeters = (totalLength / 100).toFixed(2)
-
-    return {
-      bom: bomStats,
-      totalLength: totalLengthInMeters,
-      totalPieces: pieces.length
-    }
-  }
+  const calculateTrackStats = () => calculateStatsForPieces(pieces)
 
   // 显示BOM对话框状态
   const [showBomDialog, setShowBomDialog] = React.useState(false)
@@ -1074,12 +937,7 @@ export default function Home() {
               ? { ...p, rotation: (p.rotation - 15) % 360 }
               : p
           );
-          let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
-          if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(next)) {
-            history.push(next);
-            if (history.length > 100) history = history.slice(-100);
-            localStorage.setItem('piecesHistory', JSON.stringify(history));
-          }
+          pushPiecesHistory(next);
           return next;
         });
       } else if (e.key === 'Delete') {
@@ -1087,12 +945,7 @@ export default function Home() {
         const idsToDelete = selectedIds.length > 0 ? selectedIds : (selectedId !== null ? [selectedId] : [])
         setPieces(prev => {
           const next = prev.filter(p => !idsToDelete.includes(p.id));
-          let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
-          if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(next)) {
-            history.push(next);
-            if (history.length > 100) history = history.slice(-100);
-            localStorage.setItem('piecesHistory', JSON.stringify(history));
-          }
+          pushPiecesHistory(next);
           return next;
         });
         setSelectedId(null)
@@ -1140,79 +993,11 @@ export default function Home() {
   }
 
   // 计算连接点位置
-  const getConnectionPoints = (piece: any) => {
-    if (piece.type === 'straight') {
-      const length = piece.params.length * 2
-      const rad = (piece.rotation || 0) * Math.PI / 180
-      const cos = Math.cos(rad)
-      const sin = Math.sin(rad)
-      
-      return [
-        { x: piece.x, y: piece.y, angle: piece.rotation || 0 }, // 起点
-        { x: piece.x + length * cos, y: piece.y + length * sin, angle: (piece.rotation || 0) + 180 } // 终点
-      ]
-    } else if (piece.type === 'curve') {
-      // R50-90意味着：赛道中心线到圆心距离50cm，圆心角90°
-      const centerRadius = piece.params.radius * 2 // 赛道中心线半径
-      const angleRad = (piece.params.angle * Math.PI) / 180
-      const rotRad = (piece.rotation || 0) * Math.PI / 180
-      
-      // 起点：在赛道中心线上（旋转后）
-      const startX = piece.x + centerRadius * Math.cos(rotRad)
-      const startY = piece.y + centerRadius * Math.sin(rotRad)
-      
-      // 终点：在赛道中心线上（旋转后）
-      const endAngle = angleRad + rotRad
-      const endX = piece.x + centerRadius * Math.cos(endAngle)
-      const endY = piece.y + centerRadius * Math.sin(endAngle)
-      
-      return [
-        { x: startX, y: startY, angle: (piece.rotation || 0) - 90 }, // 起点，垂直于半径
-        { x: endX, y: endY, angle: (piece.rotation || 0) + piece.params.angle - 90 } // 终点
-      ]
-    }
-    return []
-  }
+  const getConnectionPoints = (piece: TrackPiece) => getTrackConnectionPoints(piece)
 
   // 寻找最近的连接点 - 简化：只检查距离，不检查角度
-  const findNearestConnectionPoint = (draggedPiece: any, newX: number, newY: number) => {
-    const draggedPoints = getConnectionPoints({ ...draggedPiece, x: newX, y: newY })
-    let bestSnap: {
-      targetX: number;
-      targetY: number;
-      distance: number;
-      draggedPoint: { x: any; y: any; angle: any };
-      otherPoint: { x: any; y: any; angle: any };
-    } | null = null
-    let minDistance = SNAP_DISTANCE
-
-    for (const otherPiece of pieces) {
-      if (otherPiece.id === draggedPiece.id) continue
-      
-      const otherPoints = getConnectionPoints(otherPiece)
-      
-      for (const draggedPoint of draggedPoints) {
-        for (const otherPoint of otherPoints) {
-          const dx = draggedPoint.x - otherPoint.x
-          const dy = draggedPoint.y - otherPoint.y
-          const distance = Math.sqrt(dx * dx + dy * dy)
-          
-          if (distance < minDistance) {
-            // 简化：只要距离近就可以连接，不检查角度
-            minDistance = distance
-            bestSnap = {
-              targetX: otherPoint.x - (draggedPoint.x - newX),
-              targetY: otherPoint.y - (draggedPoint.y - newY),
-              distance,
-              draggedPoint,
-              otherPoint
-            }
-          }
-        }
-      }
-    }
-    
-    return bestSnap
+  const findNearestConnectionPoint = (draggedPiece: TrackPiece, newX: number, newY: number) => {
+    return findNearestConnectionPointForPieces(draggedPiece, pieces, newX, newY, SNAP_DISTANCE)
   }
 
   // 确认旋转角度
@@ -1245,12 +1030,7 @@ export default function Home() {
       } else if (selectedIds.includes(piece.id)) {
         // 点击已选中的多选项：开始拖拽多选
         // 拖动开始时入栈一次快照
-        let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
-        if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(pieces)) {
-          history.push(pieces);
-          if (history.length > 100) history = history.slice(-100);
-          localStorage.setItem('piecesHistory', JSON.stringify(history));
-        }
+        pushPiecesHistory(pieces);
   setIsDragging(true)
         const coords = getMouseSVGCoords(e)
         setDragOffset({ x: coords.x - piece.x, y: coords.y - piece.y })
@@ -1259,12 +1039,7 @@ export default function Home() {
         setSelectedId(piece.id)
         setSelectedIds([])
         // 拖动开始时入栈一次快照
-        let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
-        if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(pieces)) {
-          history.push(pieces);
-          if (history.length > 100) history = history.slice(-100);
-          localStorage.setItem('piecesHistory', JSON.stringify(history));
-        }
+        pushPiecesHistory(pieces);
   setIsDragging(true)
         const coords = getMouseSVGCoords(e)
         setDragOffset({ x: coords.x - piece.x, y: coords.y - piece.y })
@@ -1361,12 +1136,7 @@ export default function Home() {
     }
   setIsDragging(false)
     // 拖动结束时如pieces有变化则入栈一次
-    let history = JSON.parse(localStorage.getItem('piecesHistory') || '[]');
-    if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(pieces)) {
-      history.push(pieces);
-      if (history.length > 100) history = history.slice(-100);
-      localStorage.setItem('piecesHistory', JSON.stringify(history));
-    }
+    pushPiecesHistory(pieces);
   }
 
   return React.createElement('div', {
@@ -1506,10 +1276,13 @@ export default function Home() {
         minHeight: 100
       }
     }, 
-      renderMiniMap({
-        onMiniMouseDown: handleMiniMouseDown,
-        onMiniMouseMove: handleMiniMouseMove,
-        onMiniMouseUp: handleMiniMouseUp,
+      React.createElement(MiniMap, {
+        pieces,
+        viewBox,
+        dragging: draggingMini,
+        onMouseDown: handleMiniMouseDown,
+        onMouseMove: handleMiniMouseMove,
+        onMouseUp: handleMiniMouseUp,
       })
     ),
       
@@ -2165,15 +1938,11 @@ export default function Home() {
         overflow: 'hidden'
       }
     }, [
-      React.createElement('svg', {
+      React.createElement(TrackCanvas, {
         key: 'svg',
-        ref: svgRef,
-        width: '100%',
-        height: '100%',
-        viewBox: `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`,
-        style: {
-          cursor: isDragging ? 'grabbing' : (isCtrlDragging ? 'move' : 'default')
-        },
+        svgRef,
+        viewBox,
+        cursor: isDragging ? 'grabbing' : (isCtrlDragging ? 'move' : 'default'),
         onMouseDown: (e) => {
           handleMouseDown(e)
           handleCanvasMouseDown(e)
@@ -2409,43 +2178,8 @@ export default function Home() {
 
         // 测量结果渲染（即使测量模式关闭，只要有两个点就显示）
   (measurePoints.length === 2) && (() => {
-          // 根据pieceId和type查找当前最新坐标
-          const getPointCoord = (mp: { pieceId: number, type: 'start' | 'end' }) => {
-            const piece = pieces.find(p => p.id === mp.pieceId)
-            if (!piece) return { x: 0, y: 0 }
-            if (piece.type === 'straight') {
-              const length = piece.params.length * 2
-              if (mp.type === 'start') {
-                return { x: piece.x, y: piece.y }
-              } else {
-                return {
-                  x: piece.x + length * Math.cos((piece.rotation || 0) * Math.PI / 180),
-                  y: piece.y + length * Math.sin((piece.rotation || 0) * Math.PI / 180)
-                }
-              }
-            } else if (piece.type === 'curve') {
-              const centerRadius = piece.params.radius * 2
-              const angleRad = (piece.params.angle * Math.PI) / 180
-              if (mp.type === 'start') {
-                const cx = centerRadius
-                const cy = 0
-                return {
-                  x: piece.x + cx * Math.cos((piece.rotation || 0) * Math.PI / 180) - cy * Math.sin((piece.rotation || 0) * Math.PI / 180),
-                  y: piece.y + cx * Math.sin((piece.rotation || 0) * Math.PI / 180) + cy * Math.cos((piece.rotation || 0) * Math.PI / 180)
-                }
-              } else {
-                const cx = centerRadius * Math.cos(angleRad)
-                const cy = centerRadius * Math.sin(angleRad)
-                return {
-                  x: piece.x + cx * Math.cos((piece.rotation || 0) * Math.PI / 180) - cy * Math.sin((piece.rotation || 0) * Math.PI / 180),
-                  y: piece.y + cx * Math.sin((piece.rotation || 0) * Math.PI / 180) + cy * Math.cos((piece.rotation || 0) * Math.PI / 180)
-                }
-              }
-            }
-            return { x: 0, y: 0 }
-          }
-          const pt1 = getPointCoord(measurePoints[0])
-          const pt2 = getPointCoord(measurePoints[1])
+          const pt1 = getConnectionPoint(pieces, measurePoints[0])
+          const pt2 = getConnectionPoint(pieces, measurePoints[1])
           return React.createElement(React.Fragment, { key: 'measure-result' }, [
             React.createElement('line', {
               key: 'measure-line',
@@ -3151,30 +2885,3 @@ export default function Home() {
 }
 
 // 解析赛道代码，如 L88、R200A90
-
-// normalized 示例定义，防止报错（如有更复杂逻辑请补充）
-let normalized = 'R180';
-// ...如有更复杂的 normalized 赋值逻辑请补充...
-
-// 解析赛道代码，如 L88、R200A90
-function parseTrackCode(code: string) {
-  code = code.trim().toUpperCase();
-  if (code.startsWith('L')) {
-    // 直道 L88
-    const length = parseFloat(code.slice(1));
-    if (!isNaN(length)) {
-      return { type: 'straight', params: { length } };
-    }
-  } else if (code.startsWith('R')) {
-    // 弯道 R200A90
-    const match = code.match(/^R(\d+)(A(\d+))?$/);
-    if (match) {
-      const radius = parseFloat(match[1]);
-      const angle = match[3] ? parseFloat(match[3]) : 90;
-      if (!isNaN(radius) && !isNaN(angle)) {
-        return { type: 'curve', params: { radius, angle } };
-      }
-    }
-  }
-  return null;
-}
