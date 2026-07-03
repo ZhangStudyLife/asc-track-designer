@@ -1,6 +1,6 @@
 {
   "name": "asc-track-designer",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "ASC实验室智能车赛道设计器 - 专业的赛道布局设计工具",
   "private": true,
   "author": "ASC实验室",
@@ -13,7 +13,7 @@
   "main": "electron.js",
   "scripts": {
     "dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
-    "build": "next build",
+    "build": "next build && node scripts/prepare-standalone.js",
     "start": "electron .",
     "start:next": "next start",
     "dist": "npm run build && electron-builder",
@@ -28,6 +28,7 @@
     "asar": true,
     "icon": "public/icon.ico",
     "win": {
+      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",
@@ -56,15 +57,26 @@
       "uninstallerIcon": "public/icon.ico"
     },
     "files": [
-      "out/**/*",
+      "public/**/*",
       "electron.js",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".next/standalone",
+        "to": "standalone",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "extraFiles": [
       {
         "from": "public",
         "to": "public",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "directories": {
@@ -75,12 +87,10 @@
       "main": "electron.js"
     }
   },
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "^20.17.9",
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.3.7",
-    "autoprefixer": "^10.4.16",
     "concurrently": "^9.1.0",
     "electron": "^28.3.3",
     "electron-builder": "^25.1.8",
@@ -88,11 +98,9 @@
     "eslint-config-next": "15.0.3",
     "konva": "^9.3.14",
     "next": "15.0.3",
-    "postcss": "^8.4.49",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-konva": "^18.2.10",
-    "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
     "wait-on": "^8.0.1"
   }

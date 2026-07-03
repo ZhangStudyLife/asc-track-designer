@@ -1,37 +1,77 @@
-﻿const { app, BrowserWindow, protocol } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const url = require('url');
-const isDev = !app.isPackaged;
+const { app, BrowserWindow } = require('electron')
+const http = require('http')
+const net = require('net')
+const path = require('path')
 
-let mainWindow = null;
+const isDev = !app.isPackaged
 
-function registerLocalResourceProtocol() {
-  protocol.interceptFileProtocol('file', (request, callback) => {
-    const requestUrl = request.url;
-    
-    // 解析 URL
-    let filePath = requestUrl.replace('file:///', '');
-    filePath = decodeURIComponent(filePath);
-    
-    // Windows 路径修正：移除多余的斜杠
-    if (process.platform === 'win32') {
-      filePath = filePath.replace(/^\/([A-Za-z]:)/, '$1');
-    }
-    
-    // 如果路径包含 /_next/ 或 /lab-logo.png，重定向到 ASAR 中的位置
-    if (filePath.includes('/_next/')) {
-      const relativePath = filePath.substring(filePath.indexOf('/_next/') + 1);
-      filePath = path.join(__dirname, 'out', relativePath);
-    } else if (filePath.endsWith('/lab-logo.png')) {
-      filePath = path.join(__dirname, 'out', 'lab-logo.png');
-    }
-    
-    callback({ path: path.normalize(filePath) });
-  });
+let mainWindow = null
+let nextServerUrl = null
+
+function getAvailablePort(startPort) {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+
+    server.unref()
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        getAvailablePort(startPort + 1).then(resolve, reject)
+      } else {
+        reject(error)
+      }
+    })
+    server.listen(startPort, '127.0.0.1', () => {
+      const address = server.address()
+      server.close(() => resolve(address.port))
+    })
+  })
 }
 
-function createWindow() {
+function waitForServer(url) {
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now()
+    const timeoutMs = 30000
+
+    const check = () => {
+      const request = http.get(url, (response) => {
+        response.resume()
+        resolve()
+      })
+
+      request.on('error', () => {
+        if (Date.now() - startedAt > timeoutMs) {
+          reject(new Error(`Timed out waiting for ${url}`))
+        } else {
+          setTimeout(check, 300)
+        }
+      })
+
+      request.setTimeout(2000, () => {
+        request.destroy()
+      })
+    }
+
+    check()
+  })
+}
+
+async function startNextServer() {
+  const port = await getAvailablePort(3100)
+  const serverDir = app.isPackaged
+    ? path.join(process.resourcesPath, 'standalone')
+    : path.join(__dirname, '.next', 'standalone')
+  const serverPath = path.join(serverDir, 'server.js')
+
+  process.env.HOSTNAME = '127.0.0.1'
+  process.env.NODE_ENV = 'production'
+  process.env.PORT = String(port)
+  nextServerUrl = `http://127.0.0.1:${port}`
+
+  require(serverPath)
+  await waitForServer(nextServerUrl)
+}
+
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -44,46 +84,42 @@ function createWindow() {
     },
     show: false,
     backgroundColor: '#ffffff',
-  });
+  })
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-  });
+    mainWindow.show()
+  })
 
-  if (isDev) {
-    mainWindow.loadURL('http://localhost:3000');
-  } else {
-    // 直接加载 ASAR 中的 index.html，但通过自定义协议处理资源
-    const indexPath = path.join(__dirname, 'out', 'index.html');
-    mainWindow.loadFile(indexPath);
-  }
+  await mainWindow.loadURL(isDev ? 'http://localhost:3000' : nextServerUrl)
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('Failed to load:', errorCode, errorDescription);
-  });
+    console.error('Failed to load:', errorCode, errorDescription)
+  })
 
   mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+    mainWindow = null
+  })
 }
 
-app.whenReady().then(() => {
-  // 必须在创建窗口之前注册协议
+app.whenReady().then(async () => {
   if (!isDev) {
-    registerLocalResourceProtocol();
+    await startNextServer()
   }
-  
-  createWindow();
-  
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
-});
 
-app.on('window-all-closed', function () {
+  await createWindow()
+
+  app.on('activate', async () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      await createWindow()
+    }
+  })
+}).catch((error) => {
+  console.error(error)
+  app.quit()
+})
+
+app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    app.quit();
+    app.quit()
   }
-});
+})

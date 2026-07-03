@@ -1,4 +1,4 @@
-/* 简化的全局样式，不使用Tailwind CSS */
+/* Global styles used directly by the React/Electron app. */
 * {
   box-sizing: border-box;
   margin: 0;

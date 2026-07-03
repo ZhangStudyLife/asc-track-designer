@@ -69,7 +69,6 @@ Generated build output is ignored by git. Electron packages are written to `rele
 │   ├── app/             # Next.js App Router UI and styles
 │   └── types/           # local TypeScript declarations
 ├── next.config.js       # Next.js configuration
-├── tailwind.config.js   # Tailwind CSS configuration
 └── tsconfig.json        # TypeScript configuration
 ```
 

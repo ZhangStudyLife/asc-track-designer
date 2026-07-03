@@ -197,6 +197,7 @@ export default function Home() {
   const [savedSizes, setSavedSizes] = React.useState<{straights: number[], curves: {radius: number, angle: number}[]}>({straights: [], curves: []})
   const [hiddenFixedSizes, setHiddenFixedSizes] = React.useState<{straights: number[], curves: {radius: number, angle: number}[]}>({straights: [], curves: []})
   const [isClient, setIsClient] = React.useState(false)
+  const [theme, setTheme] = React.useState<'light' | 'dark'>('light')
   const [statusMessage, setStatusMessage] = React.useState('')
   const [currentArchiveName, setCurrentArchiveName] = React.useState('未命名项目')
   const [archives, setArchives] = React.useState<string[]>([])
@@ -251,6 +252,11 @@ export default function Home() {
       if (archiveList) {
         setArchives(JSON.parse(archiveList))
       }
+
+      const savedTheme = localStorage.getItem('trackDesignerTheme')
+      if (savedTheme === 'light' || savedTheme === 'dark') {
+        setTheme(savedTheme)
+      }
       
       // 加载当前项目
       const currentProject = localStorage.getItem('currentTrackProject')
@@ -265,6 +271,12 @@ export default function Home() {
   }, [])
 
   // 自动保存功能
+  React.useEffect(() => {
+    if (isClient) {
+      localStorage.setItem('trackDesignerTheme', theme)
+    }
+  }, [isClient, theme])
+
   React.useEffect(() => {
     if (isClient && pieces.length > 0) {
       const autoSave = () => {
@@ -833,15 +845,16 @@ export default function Home() {
     const svg = svgRef.current
     if (!svg) return { x: 0, y: 0 }
     
-    const rect = svg.getBoundingClientRect()
-    const mouseX = e.clientX - rect.left
-    const mouseY = e.clientY - rect.top
+    const matrix = svg.getScreenCTM()
+    if (!matrix) return { x: 0, y: 0 }
     
     // 精确的坐标转换
-    const svgX = (mouseX / rect.width) * viewBox.width + viewBox.x
-    const svgY = (mouseY / rect.height) * viewBox.height + viewBox.y
+    const point = svg.createSVGPoint()
+    point.x = e.clientX
+    point.y = e.clientY
+    const coords = point.matrixTransform(matrix.inverse())
     
-    return { x: svgX, y: svgY }
+    return { x: coords.x, y: coords.y }
   }
 
   // 平滑缩放 - 限制最大视图为16M×8M，最小200×100，增强流畅性
@@ -1046,6 +1059,8 @@ export default function Home() {
       }
     } else {
       // 空白区域点击：开始框选
+      if (e.button !== 0) return
+
       const coords = getMouseSVGCoords(e)
       
       if (!e.ctrlKey) {
@@ -1139,28 +1154,73 @@ export default function Home() {
     pushPiecesHistory(pieces);
   }
 
+  const isDark = theme === 'dark'
+  const ui = {
+    appBg: isDark ? '#020817' : '#eef2f7',
+    panel: isDark ? '#0f172a' : '#ffffff',
+    panelSoft: isDark ? '#111c30' : '#f8fafc',
+    canvas: isDark ? '#08111f' : '#f8fafc',
+    canvasGrid: isDark ? '#203047' : '#e7edf5',
+    border: isDark ? '#23324a' : '#dbe3ee',
+    borderStrong: isDark ? '#334155' : '#cbd5e1',
+    text: isDark ? '#e5e7eb' : '#111827',
+    muted: isDark ? '#94a3b8' : '#64748b',
+    button: isDark ? '#101b2d' : '#ffffff',
+    primary: isDark ? '#38bdf8' : '#2563eb',
+    primaryText: isDark ? '#04111f' : '#ffffff',
+    statusBg: isDark ? '#030712' : '#111827',
+    statusText: isDark ? '#94a3b8' : '#cbd5e1',
+    shadow: isDark ? '0 18px 50px rgba(0,0,0,0.35)' : '0 18px 45px rgba(15,23,42,0.10)'
+  }
+  const buttonBase = {
+    height: 34,
+    padding: '0 12px',
+    borderRadius: 7,
+    border: `1px solid ${ui.borderStrong}`,
+    backgroundColor: ui.button,
+    color: ui.text,
+    cursor: 'pointer',
+    userSelect: 'none' as const,
+    fontSize: 13,
+    fontWeight: 700,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    boxShadow: 'none'
+  }
+  const primaryButton = {
+    ...buttonBase,
+    border: `1px solid ${ui.primary}`,
+    backgroundColor: ui.primary,
+    color: ui.primaryText
+  }
+
   return React.createElement('div', {
     style: { 
       height: '100vh', 
       display: 'flex', 
       flexDirection: 'column',
-      fontFamily: 'Arial, sans-serif',
-      position: 'relative'
+      fontFamily: 'Inter, Microsoft YaHei, Arial, sans-serif',
+      position: 'relative',
+      backgroundColor: ui.appBg,
+      color: ui.text
     }
   }, [
     // 工具栏
     React.createElement('div', {
       key: 'toolbar',
       style: {
-        padding: '16px 20px',
-        borderBottom: '2px solid #e5e7eb',
-        backgroundColor: '#ffffff',
+        padding: '12px 18px',
+        borderBottom: `1px solid ${ui.border}`,
+        backgroundColor: ui.panel,
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         flexWrap: 'wrap',
-        gap: '15px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        gap: '12px',
+        boxShadow: ui.shadow,
+        zIndex: 20
       }
     }, [
       // 实验室Logo和标题
@@ -1177,8 +1237,8 @@ export default function Home() {
           src: '/lab-logo.png',
           alt: 'ASC实验室',
           style: {
-            width: '48px',
-            height: '48px',
+            width: '40px',
+            height: '40px',
             objectFit: 'contain'
           },
           onError: (e: any) => {
@@ -1196,9 +1256,9 @@ export default function Home() {
             key: 'title',
             style: {
               margin: '0',
-              fontSize: '24px',
-              fontWeight: 'bold',
-              color: '#1f2937',
+              fontSize: '22px',
+              fontWeight: 800,
+              color: ui.text,
               fontFamily: 'Microsoft YaHei, sans-serif'
             }
           }, 'ASC智能车赛道设计器'),
@@ -1206,8 +1266,7 @@ export default function Home() {
             key: 'subtitle',
             style: {
               fontSize: '12px',
-              color: '#6b7280',
-              fontStyle: 'italic'
+              color: ui.muted
             }
           }, '实验室内部专用工具')
         ])
@@ -1218,39 +1277,25 @@ export default function Home() {
       style: {
         display: 'flex',
         alignItems: 'center',
-        gap: '16px',
+        gap: '8px',
         marginLeft: 'auto'
       }
     }, [
       React.createElement('button', {
         key: 'measure-btn',
-        style: {
-          background: isMeasuring ? '#f59e42' : '#fff',
-          color: isMeasuring ? '#fff' : '#333',
-          border: '1.5px solid #f59e42',
-          borderRadius: 6,
-          padding: '6px 16px',
-          fontWeight: 600,
-          fontSize: 16,
-          cursor: 'pointer',
-          boxShadow: isMeasuring ? '0 2px 8px rgba(245,158,66,0.18)' : '0 2px 8px rgba(0,0,0,0.08)'
-        },
+        style: isMeasuring ? { ...primaryButton, backgroundColor: '#f59e0b', borderColor: '#f59e0b', color: '#ffffff' } : buttonBase,
         onClick: () => { setIsMeasuring(true); setMeasurePoints([]); setIsAutoFill(false); setAutoFillPoints([]); },
         title: isMeasuring ? '依次点击两个吸附点' : '点击后可测量两个吸附点间距离'
       }, isMeasuring ? (measurePoints.length === 1 ? '再点一个吸附点' : '点击吸附点') : '测量距离'),
       React.createElement('button', {
+        key: 'theme-toggle',
+        style: buttonBase,
+        onClick: () => setTheme(prev => prev === 'light' ? 'dark' : 'light'),
+        title: '切换白天/夜间模式'
+      }, theme === 'light' ? '夜间' : '白天'),
+      React.createElement('button', {
         key: 'autofill-btn',
-        style: {
-          background: isAutoFill ? '#3b82f6' : '#fff',
-          color: isAutoFill ? '#fff' : '#333',
-          border: '1.5px solid #3b82f6',
-          borderRadius: 6,
-          padding: '6px 16px',
-          fontWeight: 600,
-          fontSize: 16,
-          cursor: 'pointer',
-          boxShadow: isAutoFill ? '0 2px 8px rgba(59,130,246,0.18)' : '0 2px 8px rgba(0,0,0,0.08)'
-        },
+        style: isAutoFill ? primaryButton : buttonBase,
         onClick: () => { setIsAutoFill(true); setAutoFillPoints([]); setIsMeasuring(false); setMeasurePoints([]); },
         title: isAutoFill ? '依次点击两个吸附点' : '点击后可自动补全直道'
       }, isAutoFill ? (autoFillPoints.length === 1 ? '再点一个吸附点' : '点击吸附点') : '自动补全直道'),
@@ -1262,13 +1307,13 @@ export default function Home() {
       style: {
         position: 'fixed',
         right: 20,
-        bottom: 20,
+        bottom: 44,
         zIndex: 1000,
-        background: 'rgba(255,255,255,0.95)',
-        borderRadius: 8,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+        background: isDark ? 'rgba(15,23,42,0.94)' : 'rgba(255,255,255,0.94)',
+        borderRadius: 10,
+        boxShadow: ui.shadow,
         padding: 8,
-        border: '1px solid #e5e7eb',
+        border: `1px solid ${ui.border}`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -1293,7 +1338,15 @@ export default function Home() {
 
       React.createElement('div', {
         key: 'controls',
-        style: { display: 'flex', gap: '10px', flexWrap: 'wrap' }
+        style: {
+          display: 'flex',
+          gap: '8px',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          width: '100%',
+          paddingTop: 10,
+          borderTop: `1px solid ${ui.border}`
+        }
       }, [
         // L25直道按钮
         ...(!hiddenFixedSizes.straights.includes(25) ? [
@@ -1306,9 +1359,9 @@ export default function Home() {
               onClick: () => addPiece('straight', { length: 25 }),
               style: {
                 padding: '8px 16px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#13274a' : '#dbeafe',
+                color: isDark ? '#93c5fd' : '#1d4ed8',
+                border: `1px solid ${isDark ? '#1d4f86' : '#bfdbfe'}`,
                 borderRadius: '6px 0 0 6px',
                 cursor: 'pointer',
                 userSelect: 'none'
@@ -1319,9 +1372,9 @@ export default function Home() {
               onClick: () => toggleFixedSize('straight', 25),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1342,9 +1395,9 @@ export default function Home() {
               onClick: () => addPiece('straight', { length: 37.5 }),
               style: {
                 padding: '8px 16px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#13274a' : '#dbeafe',
+                color: isDark ? '#93c5fd' : '#1d4ed8',
+                border: `1px solid ${isDark ? '#1d4f86' : '#bfdbfe'}`,
                 borderRadius: '6px 0 0 6px',
                 cursor: 'pointer',
                 userSelect: 'none'
@@ -1355,9 +1408,9 @@ export default function Home() {
               onClick: () => toggleFixedSize('straight', 37.5),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1378,9 +1431,9 @@ export default function Home() {
               onClick: () => addPiece('straight', { length: 50 }),
               style: {
                 padding: '8px 16px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#13274a' : '#dbeafe',
+                color: isDark ? '#93c5fd' : '#1d4ed8',
+                border: `1px solid ${isDark ? '#1d4f86' : '#bfdbfe'}`,
                 borderRadius: '6px 0 0 6px',
                 cursor: 'pointer',
                 userSelect: 'none'
@@ -1391,9 +1444,9 @@ export default function Home() {
               onClick: () => toggleFixedSize('straight', 50),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1414,9 +1467,9 @@ export default function Home() {
               onClick: () => addPiece('straight', { length: 75 }),
               style: {
                 padding: '8px 16px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#13274a' : '#dbeafe',
+                color: isDark ? '#93c5fd' : '#1d4ed8',
+                border: `1px solid ${isDark ? '#1d4f86' : '#bfdbfe'}`,
                 borderRadius: '6px 0 0 6px',
                 cursor: 'pointer',
                 userSelect: 'none'
@@ -1427,9 +1480,9 @@ export default function Home() {
               onClick: () => toggleFixedSize('straight', 75),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1450,9 +1503,9 @@ export default function Home() {
               onClick: () => addPiece('straight', { length: 100 }),
               style: {
                 padding: '8px 16px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#13274a' : '#dbeafe',
+                color: isDark ? '#93c5fd' : '#1d4ed8',
+                border: `1px solid ${isDark ? '#1d4f86' : '#bfdbfe'}`,
                 borderRadius: '6px 0 0 6px',
                 cursor: 'pointer',
                 userSelect: 'none'
@@ -1463,9 +1516,9 @@ export default function Home() {
               onClick: () => toggleFixedSize('straight', 100),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1486,9 +1539,9 @@ export default function Home() {
               onClick: () => addPiece('curve', { radius: 50, angle: 30 }),
               style: {
                 padding: '8px 16px',
-                backgroundColor: '#10b981',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#063a31' : '#d1fae5',
+                color: isDark ? '#6ee7b7' : '#047857',
+                border: `1px solid ${isDark ? '#0f766e' : '#a7f3d0'}`,
                 borderRadius: '6px 0 0 6px',
                 cursor: 'pointer',
                 userSelect: 'none'
@@ -1499,9 +1552,9 @@ export default function Home() {
               onClick: () => toggleFixedSize('curve', { radius: 50, angle: 30 }),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1522,9 +1575,9 @@ export default function Home() {
               onClick: () => addPiece('curve', { radius: 50, angle: 45 }),
               style: {
                 padding: '8px 16px',
-                backgroundColor: '#10b981',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#063a31' : '#d1fae5',
+                color: isDark ? '#6ee7b7' : '#047857',
+                border: `1px solid ${isDark ? '#0f766e' : '#a7f3d0'}`,
                 borderRadius: '6px 0 0 6px',
                 cursor: 'pointer',
                 userSelect: 'none'
@@ -1535,9 +1588,9 @@ export default function Home() {
               onClick: () => toggleFixedSize('curve', { radius: 50, angle: 45 }),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1558,9 +1611,9 @@ export default function Home() {
               onClick: () => addPiece('curve', { radius: 50, angle: 90 }),
               style: {
                 padding: '8px 16px',
-                backgroundColor: '#10b981',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#063a31' : '#d1fae5',
+                color: isDark ? '#6ee7b7' : '#047857',
+                border: `1px solid ${isDark ? '#0f766e' : '#a7f3d0'}`,
                 borderRadius: '6px 0 0 6px',
                 cursor: 'pointer',
                 userSelect: 'none'
@@ -1571,9 +1624,9 @@ export default function Home() {
               onClick: () => toggleFixedSize('curve', { radius: 50, angle: 90 }),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1594,9 +1647,9 @@ export default function Home() {
               onClick: () => addPiece('curve', { radius: 70, angle: 45 }),
               style: {
                 padding: '8px 16px',
-                backgroundColor: '#10b981',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#063a31' : '#d1fae5',
+                color: isDark ? '#6ee7b7' : '#047857',
+                border: `1px solid ${isDark ? '#0f766e' : '#a7f3d0'}`,
                 borderRadius: '6px 0 0 6px',
                 cursor: 'pointer',
                 userSelect: 'none'
@@ -1607,9 +1660,9 @@ export default function Home() {
               onClick: () => toggleFixedSize('curve', { radius: 70, angle: 45 }),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1630,9 +1683,9 @@ export default function Home() {
               onClick: () => addPiece('curve', { radius: 100, angle: 60 }),
               style: {
                 padding: '8px 16px',
-                backgroundColor: '#10b981',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#063a31' : '#d1fae5',
+                color: isDark ? '#6ee7b7' : '#047857',
+                border: `1px solid ${isDark ? '#0f766e' : '#a7f3d0'}`,
                 borderRadius: '6px 0 0 6px',
                 cursor: 'pointer',
                 userSelect: 'none'
@@ -1643,9 +1696,9 @@ export default function Home() {
               onClick: () => toggleFixedSize('curve', { radius: 100, angle: 60 }),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1679,9 +1732,9 @@ export default function Home() {
               onClick: () => removeSavedSize('straight', length),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1715,9 +1768,9 @@ export default function Home() {
               onClick: () => removeSavedSize('curve', curve),
               style: {
                 padding: '8px 8px',
-                backgroundColor: '#ef4444',
-                color: 'white',
-                border: 'none',
+                backgroundColor: isDark ? '#2a1420' : '#f8fafc',
+                color: isDark ? '#fca5a5' : '#991b1b',
+                border: `1px solid ${isDark ? '#59303a' : '#e2e8f0'}`,
                 borderRadius: '0 6px 6px 0',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -1746,13 +1799,7 @@ export default function Home() {
           key: 'new-project',
           onClick: newProject,
           style: {
-            padding: '8px 16px',
-            backgroundColor: '#6366f1',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            userSelect: 'none'
+            ...primaryButton
           }
         }, '📄 新建'),
 
@@ -1784,13 +1831,7 @@ export default function Home() {
           key: 'reset-view',
           onClick: resetView,
           style: {
-            padding: '8px 16px',
-            backgroundColor: '#8b5cf6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            userSelect: 'none'
+            ...buttonBase
           }
         }, '🎯 回中'),
 
@@ -1801,23 +1842,27 @@ export default function Home() {
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            marginLeft: '20px'
+            marginLeft: '8px'
           }
         }, [
           React.createElement('span', { 
             key: 'label',
-            style: { fontSize: '14px', color: '#374151' }
+            style: { fontSize: '13px', color: ui.muted }
           }, '快速添加:'),
           React.createElement('input', {
             key: 'track-code',
             type: 'text',
             placeholder: '输入赛道代码 (如: L88, R200A90)',
             style: {
-              padding: '6px 10px',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
+              height: 34,
+              padding: '0 10px',
+              border: `1px solid ${ui.borderStrong}`,
+              borderRadius: 7,
               width: '200px',
-              fontSize: '14px'
+              fontSize: '13px',
+              backgroundColor: ui.button,
+              color: ui.text,
+              outline: 'none'
             },
             onKeyDown: (e: any) => {
               if (e.key === 'Enter') {
@@ -1839,12 +1884,10 @@ export default function Home() {
               }
             },
             style: {
-              padding: '6px 12px',
+              ...primaryButton,
               backgroundColor: '#f59e0b',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
+              borderColor: '#f59e0b',
+              color: '#ffffff'
             }
           }, '添加')
         ]),
@@ -1852,10 +1895,10 @@ export default function Home() {
         React.createElement('label', {
           key: 'load-label',
           style: {
-            padding: '8px 16px',
-            backgroundColor: '#0ea5e9',
-            color: 'white',
-            borderRadius: '6px',
+            ...buttonBase,
+            backgroundColor: isDark ? '#12304a' : '#e0f2fe',
+            color: isDark ? '#bae6fd' : '#0369a1',
+            borderColor: isDark ? '#1e4f76' : '#7dd3fc',
             cursor: 'pointer',
             userSelect: 'none',
             display: 'inline-block'
@@ -1876,13 +1919,7 @@ export default function Home() {
           key: 'export-image',
           onClick: exportAsImage,
           style: {
-            padding: '8px 16px',
-            backgroundColor: '#7c3aed',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            userSelect: 'none'
+            ...primaryButton
           }
         }, '🖼️ 导出图片'),
 
@@ -1890,13 +1927,10 @@ export default function Home() {
           key: 'view-bom',
           onClick: () => setShowBomDialog(true),
           style: {
-            padding: '8px 16px',
-            backgroundColor: '#059669',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            userSelect: 'none'
+            ...buttonBase,
+            backgroundColor: isDark ? '#063a31' : '#d1fae5',
+            color: isDark ? '#6ee7b7' : '#047857',
+            borderColor: isDark ? '#0f766e' : '#6ee7b7'
           }
         }, '📋 查看BOM'),
 
@@ -1904,13 +1938,10 @@ export default function Home() {
           key: 'clear',
           onClick: () => { setPieces([]); setSelectedId(null); setSelectedIds([]) },
           style: {
-            padding: '8px 16px',
-            backgroundColor: '#dc2626',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            userSelect: 'none'
+            ...buttonBase,
+            backgroundColor: isDark ? '#3f1218' : '#fee2e2',
+            color: isDark ? '#fecaca' : '#b91c1c',
+            borderColor: isDark ? '#7f1d1d' : '#fecaca'
           }
         }, '清空')
       ])
@@ -1922,9 +1953,11 @@ export default function Home() {
       key: 'status',
       style: {
         padding: '8px 15px',
-        backgroundColor: '#e5e7eb',
+        backgroundColor: ui.panelSoft,
         fontSize: '12px',
-        color: '#374151'
+        color: ui.muted,
+        borderBottom: `1px solid ${ui.border}`,
+        display: 'none'
       }
     }, `元件: ${pieces.length} | 选中: ${selectedIds.length > 0 ? `多选(${selectedIds.length})` : selectedId ? `ID-${selectedId}` : '无'} | Ctrl+滚轮缩放 | 右键拖拽视图 | 框选多选 | Tab旋转15° | 双击输入角度`),
 
@@ -1933,7 +1966,7 @@ export default function Home() {
       key: 'canvas',
       style: {
         flex: 1,
-        backgroundColor: '#fafafa',
+        backgroundColor: ui.canvas,
         position: 'relative',
         overflow: 'hidden'
       }
@@ -1970,9 +2003,9 @@ export default function Home() {
               key: 'grid-path',
               d: 'M 10 0 L 0 0 0 10',
               fill: 'none',
-              stroke: '#e5e7eb',
+              stroke: ui.canvasGrid,
               strokeWidth: 0.5,
-              opacity: 0.3
+              opacity: isDark ? 0.45 : 0.65
             })
           ]),
           // 设计边界
@@ -2049,8 +2082,8 @@ export default function Home() {
                 y: -width/2,
                 width: length,
                 height: width,
-                fill: '#1f2937',
-                stroke: isSelected ? '#ef4444' : '#6b7280',
+                fill: isDark ? '#e5e7eb' : '#111827',
+                stroke: isSelected ? '#ef4444' : (isDark ? '#94a3b8' : '#64748b'),
                 strokeWidth: isSelected ? 3 : 1,
                 style: { cursor: 'move' },
                 onMouseDown: (e) => handleMouseDown(e, piece),
@@ -2062,7 +2095,7 @@ export default function Home() {
                 y: 5,
                 textAnchor: 'middle',
                 fontSize: '16px',
-                fill: '#ffff00',
+                fill: isDark ? '#0f172a' : '#facc15',
                 fontWeight: 'bold',
                 style: { userSelect: 'none' }
               }, `L${piece.params.length}`),
@@ -2122,8 +2155,8 @@ export default function Home() {
                   const y4 = innerRadius * Math.sin(angleRad)
                   return `M ${x1} ${y1} L ${x2} ${y2} A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 1 ${x3} ${y3} L ${x4} ${y4} A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${x1} ${y1}`
                 })(),
-                fill: '#1f2937',
-                stroke: isSelected ? '#ef4444' : '#6b7280',
+                fill: isDark ? '#e5e7eb' : '#111827',
+                stroke: isSelected ? '#ef4444' : (isDark ? '#94a3b8' : '#64748b'),
                 strokeWidth: isSelected ? 3 : 1,
                 style: { cursor: 'move' },
                 onMouseDown: (e) => handleMouseDown(e, piece),
@@ -2144,7 +2177,7 @@ export default function Home() {
                 y: centerRadius * Math.sin(angleRad/2),
                 textAnchor: 'middle',
                 fontSize: '16px',
-                fill: '#ffff00',
+                fill: isDark ? '#0f172a' : '#facc15',
                 fontWeight: 'bold',
                 style: { userSelect: 'none' }
               }, `R${piece.params.radius}-${piece.params.angle}`),
@@ -2258,7 +2291,7 @@ export default function Home() {
         }) : null
       ].filter(Boolean)),
 
-      pieces.length === 0 ? React.createElement('div', {
+      pieces.length < 0 ? React.createElement('div', {
         key: 'welcome',
         style: {
           position: 'absolute',
@@ -2789,15 +2822,15 @@ export default function Home() {
           left: '0',
           right: '0',
           height: '32px',
-          backgroundColor: '#1f2937',
-          borderTop: '2px solid #374151',
+          backgroundColor: ui.statusBg,
+          borderTop: `1px solid ${ui.borderStrong}`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           paddingLeft: '12px',
           paddingRight: '12px',
           fontSize: '12px',
-          color: '#f9fafb',
+          color: ui.statusText,
           zIndex: 1000
         }
       }, [
@@ -2828,8 +2861,9 @@ export default function Home() {
           key: 'shortcuts',
           style: { 
             fontSize: '11px', 
-            color: '#d1d5db',
-            fontFamily: 'monospace'
+            color: ui.statusText,
+            fontFamily: 'monospace',
+            display: 'none'
           }
         }, 'Ctrl+S:存档 | Ctrl+O:导入 | Ctrl+E:导出 | Tab:旋转 | Del:删除 | 右键:拖拽')
       ]),
@@ -2850,7 +2884,8 @@ export default function Home() {
           boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
           zIndex: 500,
           maxWidth: '200px',
-          backdropFilter: 'blur(4px)'
+          backdropFilter: 'blur(4px)',
+          display: 'none'
         }
       }, [
         React.createElement('div', {
