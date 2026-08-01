@@ -56,9 +56,13 @@ export function getConnectionPoint(pieces: TrackPiece[], ref: ConnectionPointRef
   return getConnectionPoints(piece).find((point) => point.type === ref.type) || { x: 0, y: 0 }
 }
 
-export function findNearestConnectionPoint(
+export function getSnapTargets(pieces: TrackPiece[], excludedPieceId: number): ConnectionPoint[] {
+  return pieces.flatMap((piece) => piece.id === excludedPieceId ? [] : getConnectionPoints(piece))
+}
+
+export function findNearestConnectionPointInTargets(
   draggedPiece: TrackPiece,
-  pieces: TrackPiece[],
+  targets: ConnectionPoint[],
   newX: number,
   newY: number,
   snapDistance = SNAP_DISTANCE,
@@ -67,24 +71,18 @@ export function findNearestConnectionPoint(
   let bestSnap: SnapResult = null
   let minDistance = snapDistance
 
-  for (const otherPiece of pieces) {
-    if (otherPiece.id === draggedPiece.id) continue
-
-    const otherPoints = getConnectionPoints(otherPiece)
-
+  for (const otherPoint of targets) {
     for (const draggedPoint of draggedPoints) {
-      for (const otherPoint of otherPoints) {
-        const distance = getDistance(draggedPoint, otherPoint)
+      const distance = getDistance(draggedPoint, otherPoint)
 
-        if (distance < minDistance) {
-          minDistance = distance
-          bestSnap = {
-            targetX: otherPoint.x - (draggedPoint.x - newX),
-            targetY: otherPoint.y - (draggedPoint.y - newY),
-            distance,
-            draggedPoint,
-            otherPoint,
-          }
+      if (distance < minDistance) {
+        minDistance = distance
+        bestSnap = {
+          targetX: otherPoint.x - (draggedPoint.x - newX),
+          targetY: otherPoint.y - (draggedPoint.y - newY),
+          distance,
+          draggedPoint,
+          otherPoint,
         }
       }
     }

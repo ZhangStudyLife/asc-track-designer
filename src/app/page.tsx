@@ -3,16 +3,22 @@ import React from 'react'
 import { MiniMap } from '../components/track/MiniMap'
 import { TrackCanvas } from '../components/track/TrackCanvas'
 import {
-  findNearestConnectionPoint as findNearestConnectionPointForPieces,
+  findNearestConnectionPointInTargets,
   getConnectionPoint,
   getConnectionPoints as getTrackConnectionPoints,
   getDistance,
+  getSnapTargets,
   SNAP_DISTANCE,
 } from '../features/track/geometry'
 import { parseTrackCode } from '../features/track/parser'
 import { calculateTrackStats as calculateStatsForPieces } from '../features/track/stats'
-import { pushPiecesHistory, readPiecesHistory, writePiecesHistory } from '../features/track/storage'
-import type { ConnectionPointRef, TrackPiece } from '../features/track/types'
+import { flushPiecesHistory, pushPiecesHistory, readPiecesHistory, writePiecesHistory } from '../features/track/storage'
+import type { ConnectionPoint, ConnectionPointRef, TrackPiece } from '../features/track/types'
+
+const MIN_SCALE = 0.18
+const MAX_SCALE = 2.5
+const CANVAS_BOUNDS = { x: -2000, y: -1000, width: 4000, height: 2000 }
+const DESIGN_BOUNDS = { width: 3200, height: 1600, x: -1600, y: -800 }
 
 export default function Home() {
   // 拖动状态
@@ -175,14 +181,11 @@ export default function Home() {
     width: 4000, // 20M宽度（16M+4M边距）
     height: 2000 // 10M高度（8M+2M边距）
   })
-  const [scale, setScale] = React.useState(1.0)
-  // 缩放比例上下限
-  const MIN_SCALE = 0.18
-  const MAX_SCALE = 2.5
-  // 设计画布边界（与resetView一致）
-  const CANVAS_BOUNDS = { x: -2000, y: -1000, width: 4000, height: 2000 }
+  const viewBoxRef = React.useRef(viewBox)
+  viewBoxRef.current = viewBox
   const [selectedId, setSelectedId] = React.useState<number | null>(null)
   const [selectedIds, setSelectedIds] = React.useState<number[]>([]) // 多选
+  const selectedIdsSet = React.useMemo(() => new Set(selectedIds), [selectedIds])
   const [isSelecting, setIsSelecting] = React.useState(false) // 框选状态
   const [selectionStart, setSelectionStart] = React.useState<{x: number, y: number} | null>(null)
   const [selectionBox, setSelectionBox] = React.useState<{x: number, y: number, width: number, height: number} | null>(null)
@@ -199,6 +202,7 @@ export default function Home() {
   const [isClient, setIsClient] = React.useState(false)
   const [theme, setTheme] = React.useState<'light' | 'dark'>('light')
   const [statusMessage, setStatusMessage] = React.useState('')
+  const statusTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const [currentArchiveName, setCurrentArchiveName] = React.useState('未命名项目')
   const [archives, setArchives] = React.useState<string[]>([])
   const [showArchiveDialog, setShowArchiveDialog] = React.useState(false)
@@ -206,6 +210,45 @@ export default function Home() {
   const [isCtrlDragging, setIsCtrlDragging] = React.useState(false)
   const [ctrlDragStart, setCtrlDragStart] = React.useState({ x: 0, y: 0 })
   const svgRef = React.useRef<SVGSVGElement>(null)
+  const snapTargetsRef = React.useRef<ConnectionPoint[]>([])
+  const pointerFrameRef = React.useRef<number | null>(null)
+  const pendingPointerRef = React.useRef<{ clientX: number; clientY: number } | null>(null)
+  const selectionBoxRef = React.useRef<{ x: number; y: number; width: number; height: number } | null>(null)
+  const piecesRef = React.useRef(pieces)
+  const selectedIdRef = React.useRef(selectedId)
+  const selectedIdsRef = React.useRef(selectedIds)
+  const isDraggingRef = React.useRef(isDragging)
+  const isSelectingRef = React.useRef(isSelecting)
+  const selectionStartRef = React.useRef(selectionStart)
+  const dragOffsetRef = React.useRef(dragOffset)
+  piecesRef.current = pieces
+  selectedIdRef.current = selectedId
+  selectedIdsRef.current = selectedIds
+  isDraggingRef.current = isDragging
+  isSelectingRef.current = isSelecting
+  selectionStartRef.current = selectionStart
+  dragOffsetRef.current = dragOffset
+
+  const showStatusMessage = React.useCallback((message: string, duration = 2000) => {
+    setStatusMessage(message)
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
+    statusTimerRef.current = setTimeout(() => {
+      setStatusMessage('')
+      statusTimerRef.current = null
+    }, duration)
+  }, [])
+
+  React.useEffect(() => {
+    const flushHistory = () => flushPiecesHistory()
+    window.addEventListener('pagehide', flushHistory)
+
+    return () => {
+      window.removeEventListener('pagehide', flushHistory)
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
+      if (pointerFrameRef.current !== null) cancelAnimationFrame(pointerFrameRef.current)
+      flushPiecesHistory()
+    }
+  }, [])
 
   // 撤销功能：Ctrl+Z
   React.useEffect(() => {
@@ -218,19 +261,17 @@ export default function Home() {
           if (history.length > 1) {
             history.pop();
             writePiecesHistory(history);
-            setStatusMessage('撤销成功');
-            setTimeout(() => setStatusMessage(''), 1000);
+            showStatusMessage('撤销成功', 1000);
             return history[history.length - 1];
           }
-          setStatusMessage('没有可撤销的操作');
-          setTimeout(() => setStatusMessage(''), 1000);
+          showStatusMessage('没有可撤销的操作', 1000);
           return prev;
         });
       }
     };
     window.addEventListener('keydown', handleUndoKey);
     return () => window.removeEventListener('keydown', handleUndoKey);
-  }, []);
+  }, [showStatusMessage]);
   
   // 客户端水合后加载localStorage数据
   React.useEffect(() => {
@@ -287,14 +328,13 @@ export default function Home() {
           timestamp: new Date().toISOString()
         }
         localStorage.setItem('currentTrackProject', JSON.stringify(projectData))
-        setStatusMessage('自动保存完成')
-        setTimeout(() => setStatusMessage(''), 2000)
+        showStatusMessage('自动保存完成')
       }
       
       const timer = setTimeout(autoSave, 5000) // 5秒后自动保存
       return () => clearTimeout(timer)
     }
-  }, [pieces, viewBox, currentArchiveName, isClient])
+  }, [pieces, viewBox, currentArchiveName, isClient, showStatusMessage])
 
   // Ctrl+左键拖拽画布功能
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
@@ -365,8 +405,7 @@ export default function Home() {
     setCurrentArchiveName(archiveName)
     setShowArchiveDialog(false)
     setArchiveName('')
-    setStatusMessage(`存档"${archiveName}"保存成功`)
-    setTimeout(() => setStatusMessage(''), 3000)
+    showStatusMessage(`存档"${archiveName}"保存成功`, 3000)
   }
 
   const loadArchive = (name: string) => {
@@ -379,8 +418,7 @@ export default function Home() {
         setCurrentArchiveName(name)
         setSelectedId(null)
         setSelectedIds([])
-        setStatusMessage(`已加载存档"${name}"`)
-        setTimeout(() => setStatusMessage(''), 3000)
+        showStatusMessage(`已加载存档"${name}"`, 3000)
       }
     } catch (error) {
       alert('加载存档失败')
@@ -430,8 +468,7 @@ export default function Home() {
       return next;
     });
     setSelectedId(newPiece.id)
-    setStatusMessage(`已添加赛道: ${code}`)
-    setTimeout(() => setStatusMessage(''), 3000)
+    showStatusMessage(`已添加赛道: ${code}`, 3000)
   }
 
   // 一键回中功能 - 使用与初始状态相同的视角
@@ -442,14 +479,9 @@ export default function Home() {
       width: 4000, 
       height: 2000 
     })
-    setStatusMessage('视图已重置到默认位置')
-    setTimeout(() => setStatusMessage(''), 2000)
+    showStatusMessage('视图已重置到默认位置')
   }
   
-  // 设计范围：16M × 8M (转换为像素：1cm = 2px, 所以 16m = 3200px, 8m = 1600px)
-  const DESIGN_BOUNDS = { width: 3200, height: 1600, x: -1600, y: -800 }
-  const SNAP_DISTANCE = 30 // 吸附距离
-
   const addPiece = (type: string, params: any) => {
     setPieces(prev => {
       const next = [...prev, {
@@ -486,8 +518,7 @@ export default function Home() {
     a.click()
     URL.revokeObjectURL(url)
     
-    setStatusMessage(`赛道数据已导出为JSON文件`)
-    setTimeout(() => setStatusMessage(''), 3000)
+    showStatusMessage(`赛道数据已导出为JSON文件`, 3000)
   }
 
   // 加载JSON文件 - 增强兼容性
@@ -607,6 +638,8 @@ export default function Home() {
     tempSvg.setAttribute('height', '3840') // 16:8比例，超高分辨率
     
     const svgData = new XMLSerializer().serializeToString(tempSvg)
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
+    const svgUrl = URL.createObjectURL(svgBlob)
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
     const img = new Image()
@@ -682,15 +715,24 @@ export default function Home() {
       canvas.toBlob((blob) => {
         if (blob) {
           const link = document.createElement('a')
+          const downloadUrl = URL.createObjectURL(blob)
           link.download = `track_design_${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.png`
-          link.href = URL.createObjectURL(blob)
+          link.href = downloadUrl
           link.click()
-          URL.revokeObjectURL(link.href)
+          setTimeout(() => URL.revokeObjectURL(downloadUrl), 0)
         }
+        canvas.width = 0
+        canvas.height = 0
+        URL.revokeObjectURL(svgUrl)
       }, 'image/png', 1.0)
     }
-    
-    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)))
+
+    img.onerror = () => {
+      canvas.width = 0
+      canvas.height = 0
+      URL.revokeObjectURL(svgUrl)
+    }
+    img.src = svgUrl
   }
 
   // BOM统计和赛道长度计算
@@ -841,7 +883,7 @@ export default function Home() {
   }
 
   // 统一的鼠标坐标转SVG坐标转换函数
-  const getMouseSVGCoords = (e: React.MouseEvent) => {
+  const getClientSVGCoords = (clientX: number, clientY: number) => {
     const svg = svgRef.current
     if (!svg) return { x: 0, y: 0 }
     
@@ -850,42 +892,39 @@ export default function Home() {
     
     // 精确的坐标转换
     const point = svg.createSVGPoint()
-    point.x = e.clientX
-    point.y = e.clientY
+    point.x = clientX
+    point.y = clientY
     const coords = point.matrixTransform(matrix.inverse())
     
     return { x: coords.x, y: coords.y }
   }
 
+  const getMouseSVGCoords = (e: React.MouseEvent) => getClientSVGCoords(e.clientX, e.clientY)
+
   // 平滑缩放 - 限制最大视图为16M×8M，最小200×100，增强流畅性
-  const handleZoom = (delta: number, centerX?: number, centerY?: number) => {
-    const zoomFactor = delta > 0 ? 1.15 : 0.85 // 优化缩放步长，更流畅
-    // 计算缩放后的宽高
-    const newWidth = Math.max(150, Math.min(8000, viewBox.width * zoomFactor))
-    const newHeight = Math.max(75, Math.min(4000, viewBox.height * zoomFactor))
-    // 计算缩放后的 scale
-    const newScale = 1000 / newWidth
-    // 限制 scale 在上下限范围内
-    if (newScale < MIN_SCALE || newScale > MAX_SCALE) {
-      return // 超出缩放范围则不缩放
-    }
-  // 以指定点为中心缩放
-  const centerViewX = centerX !== undefined ? centerX : viewBox.x + viewBox.width / 2
-  const centerViewY = centerY !== undefined ? centerY : viewBox.y + viewBox.height / 2
-  let newX = centerViewX - newWidth / 2
-  let newY = centerViewY - newHeight / 2
+  const handleZoom = React.useCallback((delta: number, centerX?: number, centerY?: number) => {
+    const zoomFactor = delta > 0 ? 1.15 : 0.85
 
-  // 边界限制：缩放后画布不能超出设计区域
-  // 限制左上角
-  if (newX < CANVAS_BOUNDS.x) newX = CANVAS_BOUNDS.x
-  if (newY < CANVAS_BOUNDS.y) newY = CANVAS_BOUNDS.y
-  // 限制右下角
-  if (newX + newWidth > CANVAS_BOUNDS.x + CANVAS_BOUNDS.width) newX = CANVAS_BOUNDS.x + CANVAS_BOUNDS.width - newWidth
-  if (newY + newHeight > CANVAS_BOUNDS.y + CANVAS_BOUNDS.height) newY = CANVAS_BOUNDS.y + CANVAS_BOUNDS.height - newHeight
+    setViewBox(currentViewBox => {
+      const newWidth = Math.max(150, Math.min(8000, currentViewBox.width * zoomFactor))
+      const newHeight = Math.max(75, Math.min(4000, currentViewBox.height * zoomFactor))
+      const newScale = 1000 / newWidth
 
-  setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight })
-  setScale(newScale)
-  }
+      if (newScale < MIN_SCALE || newScale > MAX_SCALE) return currentViewBox
+
+      const centerViewX = centerX !== undefined ? centerX : currentViewBox.x + currentViewBox.width / 2
+      const centerViewY = centerY !== undefined ? centerY : currentViewBox.y + currentViewBox.height / 2
+      let newX = centerViewX - newWidth / 2
+      let newY = centerViewY - newHeight / 2
+
+      if (newX < CANVAS_BOUNDS.x) newX = CANVAS_BOUNDS.x
+      if (newY < CANVAS_BOUNDS.y) newY = CANVAS_BOUNDS.y
+      if (newX + newWidth > CANVAS_BOUNDS.x + CANVAS_BOUNDS.width) newX = CANVAS_BOUNDS.x + CANVAS_BOUNDS.width - newWidth
+      if (newY + newHeight > CANVAS_BOUNDS.y + CANVAS_BOUNDS.height) newY = CANVAS_BOUNDS.y + CANVAS_BOUNDS.height - newHeight
+
+      return { x: newX, y: newY, width: newWidth, height: newHeight }
+    })
+  }, [])
 
   // 滚轮缩放
   React.useEffect(() => {
@@ -899,8 +938,9 @@ export default function Home() {
           const mouseY = e.clientY - rect.top
           
           // 转换到SVG坐标
-          const svgX = (mouseX / rect.width) * viewBox.width + viewBox.x
-          const svgY = (mouseY / rect.height) * viewBox.height + viewBox.y
+          const currentViewBox = viewBoxRef.current
+          const svgX = (mouseX / rect.width) * currentViewBox.width + currentViewBox.x
+          const svgY = (mouseY / rect.height) * currentViewBox.height + currentViewBox.y
           
           // 优化缩放响应，更灵敏的滚轮控制
           const zoomDelta = e.deltaY > 0 ? -1 : 1
@@ -914,15 +954,20 @@ export default function Home() {
       svg.addEventListener('wheel', handleWheel, { passive: false })
       return () => svg.removeEventListener('wheel', handleWheel)
     }
-  }, [viewBox])
+  }, [handleZoom])
 
   // 键盘控制：Tab键旋转，Delete键删除，ESC取消旋转，Ctrl+A全选，快捷键操作
+  const saveAsArchiveRef = React.useRef(saveAsArchive)
+  const exportAsImageRef = React.useRef(exportAsImage)
+  saveAsArchiveRef.current = saveAsArchive
+  exportAsImageRef.current = exportAsImage
+
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl+S 保存
       if (e.ctrlKey && e.key === 's') {
         e.preventDefault()
-        saveAsArchive()
+        saveAsArchiveRef.current()
         return
       }
       
@@ -936,17 +981,20 @@ export default function Home() {
       // Ctrl+E 导出图片
       if (e.ctrlKey && e.key === 'e') {
         e.preventDefault()
-        exportAsImage()
+        exportAsImageRef.current()
         return
       }
       
-      if (e.key === 'Tab' && (selectedId !== null || selectedIds.length > 0)) {
+      const activeSelectedId = selectedIdRef.current
+      const activeSelectedIds = selectedIdsRef.current
+
+      if (e.key === 'Tab' && (activeSelectedId !== null || activeSelectedIds.length > 0)) {
         e.preventDefault()
         // Tab键：旋转选中的赛道，并同步入栈
-        const idsToRotate = selectedIds.length > 0 ? selectedIds : (selectedId !== null ? [selectedId] : [])
+        const idsToRotate = new Set(activeSelectedIds.length > 0 ? activeSelectedIds : (activeSelectedId !== null ? [activeSelectedId] : []))
         setPieces(prev => {
           const next = prev.map(p =>
-            idsToRotate.includes(p.id)
+            idsToRotate.has(p.id)
               ? { ...p, rotation: (p.rotation - 15) % 360 }
               : p
           );
@@ -955,14 +1003,16 @@ export default function Home() {
         });
       } else if (e.key === 'Delete') {
         // Delete键：删除选中元件，并同步入栈
-        const idsToDelete = selectedIds.length > 0 ? selectedIds : (selectedId !== null ? [selectedId] : [])
+        const idsToDelete = new Set(activeSelectedIds.length > 0 ? activeSelectedIds : (activeSelectedId !== null ? [activeSelectedId] : []))
         setPieces(prev => {
-          const next = prev.filter(p => !idsToDelete.includes(p.id));
+          const next = prev.filter(p => !idsToDelete.has(p.id));
           pushPiecesHistory(next);
           return next;
         });
         setSelectedId(null)
         setSelectedIds([])
+        selectedIdRef.current = null
+        selectedIdsRef.current = []
       } else if (e.key === 'Escape') {
         // ESC键：取消选择和旋转输入
         setIsRotating(false)
@@ -971,17 +1021,25 @@ export default function Home() {
         setSelectedIds([])
         setIsSelecting(false)
         setSelectionBox(null)
+        selectedIdRef.current = null
+        selectedIdsRef.current = []
+        isSelectingRef.current = false
+        selectionStartRef.current = null
+        selectionBoxRef.current = null
       } else if (e.key === 'a' && e.ctrlKey) {
         // Ctrl+A：全选
         e.preventDefault()
-        setSelectedIds(pieces.map(p => p.id))
+        const allPieceIds = piecesRef.current.map(p => p.id)
+        selectedIdsRef.current = allPieceIds
+        selectedIdRef.current = null
+        setSelectedIds(allPieceIds)
         setSelectedId(null)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedId, selectedIds, pieces])
+  }, [])
 
   // 框选检测
   const isInSelectionBox = (piece: any, box: {x: number, y: number, width: number, height: number}) => {
@@ -999,7 +1057,10 @@ export default function Home() {
       setRotationInput('')
     } else {
       // 单选状态
+      selectedIdRef.current = piece.id
+      selectedIdsRef.current = []
       setSelectedId(piece.id)
+      setSelectedIds([])
       setIsRotating(true)
       setRotationInput(piece.rotation.toString())
     }
@@ -1010,7 +1071,7 @@ export default function Home() {
 
   // 寻找最近的连接点 - 简化：只检查距离，不检查角度
   const findNearestConnectionPoint = (draggedPiece: TrackPiece, newX: number, newY: number) => {
-    return findNearestConnectionPointForPieces(draggedPiece, pieces, newX, newY, SNAP_DISTANCE)
+    return findNearestConnectionPointInTargets(draggedPiece, snapTargetsRef.current, newX, newY, SNAP_DISTANCE)
   }
 
   // 确认旋转角度
@@ -1031,31 +1092,49 @@ export default function Home() {
   const handleMouseDown = (e: React.MouseEvent, piece?: any) => {
     if (piece) {
       e.stopPropagation()
+      const activeSelectedIds = selectedIdsRef.current
+      const activeSelectedIdsSet = new Set(activeSelectedIds)
+      const currentPieces = piecesRef.current
       
       if (e.ctrlKey) {
         // Ctrl+点击：多选
-        if (selectedIds.includes(piece.id)) {
-          setSelectedIds(prev => prev.filter(id => id !== piece.id))
+        if (activeSelectedIdsSet.has(piece.id)) {
+          const nextSelectedIds = activeSelectedIds.filter(id => id !== piece.id)
+          selectedIdsRef.current = nextSelectedIds
+          setSelectedIds(nextSelectedIds)
         } else {
-          setSelectedIds(prev => [...prev, piece.id])
+          const nextSelectedIds = [...activeSelectedIds, piece.id]
+          selectedIdsRef.current = nextSelectedIds
+          setSelectedIds(nextSelectedIds)
         }
+        selectedIdRef.current = null
         setSelectedId(null)
-      } else if (selectedIds.includes(piece.id)) {
+      } else if (activeSelectedIdsSet.has(piece.id)) {
         // 点击已选中的多选项：开始拖拽多选
         // 拖动开始时入栈一次快照
-        pushPiecesHistory(pieces);
-  setIsDragging(true)
+        pushPiecesHistory(currentPieces);
+        snapTargetsRef.current = []
+        isDraggingRef.current = true
+        setIsDragging(true)
         const coords = getMouseSVGCoords(e)
-        setDragOffset({ x: coords.x - piece.x, y: coords.y - piece.y })
+        const nextDragOffset = { x: coords.x - piece.x, y: coords.y - piece.y }
+        dragOffsetRef.current = nextDragOffset
+        setDragOffset(nextDragOffset)
       } else {
         // 单选
+        selectedIdRef.current = piece.id
+        selectedIdsRef.current = []
         setSelectedId(piece.id)
         setSelectedIds([])
         // 拖动开始时入栈一次快照
-        pushPiecesHistory(pieces);
-  setIsDragging(true)
+        pushPiecesHistory(currentPieces);
+        snapTargetsRef.current = getSnapTargets(currentPieces, piece.id)
+        isDraggingRef.current = true
+        setIsDragging(true)
         const coords = getMouseSVGCoords(e)
-        setDragOffset({ x: coords.x - piece.x, y: coords.y - piece.y })
+        const nextDragOffset = { x: coords.x - piece.x, y: coords.y - piece.y }
+        dragOffsetRef.current = nextDragOffset
+        setDragOffset(nextDragOffset)
       }
     } else {
       // 空白区域点击：开始框选
@@ -1064,46 +1143,60 @@ export default function Home() {
       const coords = getMouseSVGCoords(e)
       
       if (!e.ctrlKey) {
+        selectedIdRef.current = null
+        selectedIdsRef.current = []
         setSelectedId(null)
         setSelectedIds([])
       }
       setIsRotating(false)
+      isSelectingRef.current = true
+      selectionStartRef.current = { x: coords.x, y: coords.y }
       setIsSelecting(true)
-      setSelectionStart({ x: coords.x, y: coords.y })
-      setSelectionBox({ x: coords.x, y: coords.y, width: 0, height: 0 })
+      setSelectionStart(selectionStartRef.current)
+      const initialBox = { x: coords.x, y: coords.y, width: 0, height: 0 }
+      selectionBoxRef.current = initialBox
+      setSelectionBox(initialBox)
     }
   }
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isSelecting && selectionStart) {
+  const processMouseMove = (clientX: number, clientY: number) => {
+    const activeSelectionStart = selectionStartRef.current
+    if (isSelectingRef.current && activeSelectionStart) {
       // 框选模式 - 使用统一的坐标转换
-      const coords = getMouseSVGCoords(e)
+      const coords = getClientSVGCoords(clientX, clientY)
       
       // 确保选择框精确跟随鼠标
       const newBox = {
-        x: Math.min(selectionStart.x, coords.x),
-        y: Math.min(selectionStart.y, coords.y),
-        width: Math.abs(coords.x - selectionStart.x),
-        height: Math.abs(coords.y - selectionStart.y)
+        x: Math.min(activeSelectionStart.x, coords.x),
+        y: Math.min(activeSelectionStart.y, coords.y),
+        width: Math.abs(coords.x - activeSelectionStart.x),
+        height: Math.abs(coords.y - activeSelectionStart.y)
       }
+      selectionBoxRef.current = newBox
       setSelectionBox(newBox)
-    } else if (isDragging && (selectedId !== null || selectedIds.length > 0)) {
+    } else if (isDraggingRef.current) {
       // 拖拽模式 - 使用统一的坐标转换
-      const coords = getMouseSVGCoords(e)
+      const activeSelectedId = selectedIdRef.current
+      const activeSelectedIds = selectedIdsRef.current
+      const activeSelectedIdsSet = new Set(activeSelectedIds)
+      const idsToMove = activeSelectedIds.length > 0 ? activeSelectedIds : (activeSelectedId !== null ? [activeSelectedId] : [])
+      if (idsToMove.length === 0) return
+
+      const coords = getClientSVGCoords(clientX, clientY)
       
-      let newX = coords.x - dragOffset.x
-      let newY = coords.y - dragOffset.y
+      let newX = coords.x - dragOffsetRef.current.x
+      let newY = coords.y - dragOffsetRef.current.y
       
       // 边界限制
       newX = Math.max(DESIGN_BOUNDS.x, Math.min(DESIGN_BOUNDS.x + DESIGN_BOUNDS.width, newX))
       newY = Math.max(DESIGN_BOUNDS.y, Math.min(DESIGN_BOUNDS.y + DESIGN_BOUNDS.height, newY))
         
         // 确定要移动的赛道
-        const idsToMove = selectedIds.length > 0 ? selectedIds : (selectedId !== null ? [selectedId] : [])
+        const currentPieces = piecesRef.current
         
         if (idsToMove.length === 1) {
           // 单个赛道：检查连接点吸附
-          const draggedPiece = pieces.find(p => p.id === idsToMove[0])
+          const draggedPiece = currentPieces.find(p => p.id === idsToMove[0])
           if (draggedPiece) {
             const snapPoint = findNearestConnectionPoint(draggedPiece, newX, newY)
             if (snapPoint) {
@@ -1114,22 +1207,22 @@ export default function Home() {
         }
         
         // 多选或单选移动
-        if (selectedIds.length > 0) {
+        if (activeSelectedIds.length > 0) {
           // 多选移动：计算偏移量
-          const referencePiece = pieces.find(p => selectedIds.includes(p.id))
+          const referencePiece = currentPieces.find(p => activeSelectedIdsSet.has(p.id))
           if (referencePiece) {
             const deltaX = newX - referencePiece.x
             const deltaY = newY - referencePiece.y
             setPieces(prev => prev.map(p => 
-              selectedIds.includes(p.id)
+              activeSelectedIdsSet.has(p.id)
                 ? { ...p, x: p.x + deltaX, y: p.y + deltaY }
                 : p
             ))
           }
-        } else if (selectedId !== null) {
+        } else if (activeSelectedId !== null) {
           // 单选移动
           setPieces(prev => prev.map(p => 
-            p.id === selectedId 
+            p.id === activeSelectedId
               ? { ...p, x: newX, y: newY }
               : p
           ))
@@ -1137,21 +1230,56 @@ export default function Home() {
     }
   }
 
+  const flushPendingPointerMove = () => {
+    if (pointerFrameRef.current !== null) {
+      cancelAnimationFrame(pointerFrameRef.current)
+      pointerFrameRef.current = null
+    }
+
+    const pendingPointer = pendingPointerRef.current
+    pendingPointerRef.current = null
+    if (pendingPointer) processMouseMove(pendingPointer.clientX, pendingPointer.clientY)
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isSelectingRef.current && !isDraggingRef.current) return
+
+    pendingPointerRef.current = { clientX: e.clientX, clientY: e.clientY }
+    if (pointerFrameRef.current !== null) return
+
+    pointerFrameRef.current = requestAnimationFrame(() => {
+      pointerFrameRef.current = null
+      const pendingPointer = pendingPointerRef.current
+      pendingPointerRef.current = null
+      if (pendingPointer) processMouseMove(pendingPointer.clientX, pendingPointer.clientY)
+    })
+  }
+
   const handleMouseUp = () => {
-    if (isSelecting && selectionBox) {
+    flushPendingPointerMove()
+
+    const activeSelectionBox = selectionBoxRef.current || selectionBox
+    if (isSelectingRef.current && activeSelectionBox) {
       // 完成框选
-      const selectedInBox = pieces.filter(piece => isInSelectionBox(piece, selectionBox))
-      setSelectedIds(prev => {
-        const newIds = selectedInBox.map(p => p.id)
-        return [...new Set([...prev, ...newIds])] // 避免重复
-      })
+      const selectedInBox = piecesRef.current.filter(piece => isInSelectionBox(piece, activeSelectionBox))
+      const nextSelectedIds = [...new Set([...selectedIdsRef.current, ...selectedInBox.map(piece => piece.id)])]
+      selectedIdsRef.current = nextSelectedIds
+      setSelectedIds(nextSelectedIds)
+      isSelectingRef.current = false
+      selectionStartRef.current = null
       setIsSelecting(false)
       setSelectionBox(null)
       setSelectionStart(null)
+      selectionBoxRef.current = null
     }
-  setIsDragging(false)
+    isDraggingRef.current = false
+    setIsDragging(false)
+    snapTargetsRef.current = []
     // 拖动结束时如pieces有变化则入栈一次
-    pushPiecesHistory(pieces);
+    setPieces(currentPieces => {
+      pushPiecesHistory(currentPieces)
+      return currentPieces
+    })
   }
 
   const isDark = theme === 'dark'
@@ -2065,7 +2193,7 @@ export default function Home() {
 
         // 渲染赛道元件 - 支持多选高亮
         ...pieces.map(piece => {
-          const isSelected = piece.id === selectedId || selectedIds.includes(piece.id)
+          const isSelected = piece.id === selectedId || selectedIdsSet.has(piece.id)
           if (piece.type === 'straight') {
             const length = piece.params.length * 2
             const width = 45 * 2
