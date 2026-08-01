@@ -163,6 +163,49 @@ test('keeps measurement and auto-fill behavior unchanged', async ({ page }) => {
   expect(await generated.getAttribute('transform')).toContain('translate(100, 200)')
 })
 
+test('drags a multi-selection from the pressed piece without jumping', async ({ page }) => {
+  await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
+  const canvas = page.locator('svg[width="100%"][height="100%"]')
+  const pieces = canvas.locator('g[data-piece-id]')
+  const pressedPiece = canvas.locator('g[data-piece-id="3"]')
+
+  await page.keyboard.press('Control+a')
+  const positionsBefore = await pieces.evaluateAll((elements) => elements.map((element) => {
+    const match = element.getAttribute('transform')?.match(/translate\(([^,]+), ([^)]+)\)/)
+    return { x: Number(match?.[1]), y: Number(match?.[2]) }
+  }))
+  const dragBox = await pressedPiece.locator('rect').boundingBox()
+  expect(dragBox).not.toBeNull()
+  const start = { x: dragBox!.x + dragBox!.width * 0.25, y: dragBox!.y + dragBox!.height * 0.25 }
+  const end = { x: start.x + 8, y: start.y + 6 }
+  const expectedDelta = await canvas.evaluate((element, points) => {
+    const svg = element as SVGSVGElement
+    const toSvg = (point: { x: number; y: number }) => {
+      const svgPoint = svg.createSVGPoint()
+      svgPoint.x = point.x
+      svgPoint.y = point.y
+      return svgPoint.matrixTransform(svg.getScreenCTM()!.inverse())
+    }
+    const from = toSvg(points.start)
+    const to = toSvg(points.end)
+    return { x: to.x - from.x, y: to.y - from.y }
+  }, { start, end })
+
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(end.x, end.y)
+  await page.mouse.up()
+
+  const positionsAfter = await pieces.evaluateAll((elements) => elements.map((element) => {
+    const match = element.getAttribute('transform')?.match(/translate\(([^,]+), ([^)]+)\)/)
+    return { x: Number(match?.[1]), y: Number(match?.[2]) }
+  }))
+  positionsAfter.forEach((position, index) => {
+    expect(position.x - positionsBefore[index].x).toBeCloseTo(expectedDelta.x, 3)
+    expect(position.y - positionsBefore[index].y).toBeCloseTo(expectedDelta.y, 3)
+  })
+})
+
 test('keeps multi-select rotation, deletion, archives, and recovery working', async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
   const pieces = page.locator('g[data-piece-id]')

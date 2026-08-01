@@ -223,6 +223,7 @@ export default function PvcDesigner() {
   const pointerFrameRef = React.useRef<number | null>(null)
   const pendingPointerRef = React.useRef<{ clientX: number; clientY: number } | null>(null)
   const selectionBoxRef = React.useRef<{ x: number; y: number; width: number; height: number } | null>(null)
+  const dragAnchorIdRef = React.useRef<number | null>(null)
   const piecesRef = React.useRef(getPvcPieces())
   const selectedIdRef = React.useRef(selectedId)
   const selectedIdsRef = React.useRef(selectedIds)
@@ -1168,6 +1169,7 @@ export default function PvcDesigner() {
         // 拖动开始时入栈一次快照
         pushPiecesHistory(currentPieces);
         snapTargetsRef.current = []
+        dragAnchorIdRef.current = piece.id
         isDraggingRef.current = true
         setIsDragging(true)
         const coords = getMouseSVGCoords(e)
@@ -1183,6 +1185,7 @@ export default function PvcDesigner() {
         // 拖动开始时入栈一次快照
         pushPiecesHistory(currentPieces);
         snapTargetsRef.current = getSnapTargets(currentPieces, piece.id)
+        dragAnchorIdRef.current = piece.id
         isDraggingRef.current = true
         setIsDragging(true)
         const coords = getMouseSVGCoords(e)
@@ -1263,7 +1266,7 @@ export default function PvcDesigner() {
         // 多选或单选移动
         if (activeSelectedIds.length > 0) {
           // 多选移动：计算偏移量
-          const referencePiece = currentPieces.find(p => activeSelectedIdsSet.has(p.id))
+          const referencePiece = currentPieces.find(p => p.id === dragAnchorIdRef.current)
           if (referencePiece) {
             const deltaX = newX - referencePiece.x
             const deltaY = newY - referencePiece.y
@@ -1327,6 +1330,7 @@ export default function PvcDesigner() {
       selectionBoxRef.current = null
     }
     isDraggingRef.current = false
+    dragAnchorIdRef.current = null
     setIsDragging(false)
     snapTargetsRef.current = []
     // 拖动结束时如pieces有变化则入栈一次
