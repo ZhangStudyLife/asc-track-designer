@@ -6,6 +6,7 @@ export const TRACK_STORAGE_KEYS = {
   hiddenFixedSizes: 'hiddenFixedSizes',
   trackArchives: 'trackArchives',
   currentTrackProject: 'currentTrackProject',
+  theme: 'trackDesignerTheme',
   archivePrefix: 'archive_',
 } as const
 
