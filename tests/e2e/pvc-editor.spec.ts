@@ -73,6 +73,46 @@ test('loads the Vite editor and keeps add, drag, zoom, and box selection working
   await page.mouse.up()
 })
 
+test('zooms continuously around the pointer without Ctrl', async ({ page }) => {
+  const canvas = page.locator('svg[width="100%"][height="100%"]')
+  const canvasBox = await canvas.boundingBox()
+  expect(canvasBox).not.toBeNull()
+  const pointer = {
+    x: canvasBox!.x + canvasBox!.width * 0.62,
+    y: canvasBox!.y + canvasBox!.height * 0.46,
+  }
+  const readViewBox = async () => {
+    const values = (await canvas.getAttribute('viewBox'))!.split(' ').map(Number)
+    return { x: values[0], y: values[1], width: values[2], height: values[3] }
+  }
+  const readPointerCoordinate = () => canvas.evaluate((element, point) => {
+    const svg = element as SVGSVGElement
+    const svgPoint = svg.createSVGPoint()
+    svgPoint.x = point.x
+    svgPoint.y = point.y
+    const transformed = svgPoint.matrixTransform(svg.getScreenCTM()!.inverse())
+    return { x: transformed.x, y: transformed.y }
+  }, pointer)
+
+  await page.mouse.move(pointer.x, pointer.y)
+  const initialViewBox = await readViewBox()
+  const initialPointerCoordinate = await readPointerCoordinate()
+  await page.mouse.wheel(0, -10)
+  await expect.poll(async () => (await readViewBox()).width).toBeLessThan(initialViewBox.width)
+  const smallZoomViewBox = await readViewBox()
+  const pointerCoordinateAfterZoom = await readPointerCoordinate()
+  expect(pointerCoordinateAfterZoom.x).toBeCloseTo(initialPointerCoordinate.x, 1)
+  expect(pointerCoordinateAfterZoom.y).toBeCloseTo(initialPointerCoordinate.y, 1)
+
+  await page.mouse.wheel(0, 10)
+  await expect.poll(async () => (await readViewBox()).width).toBeCloseTo(initialViewBox.width, 3)
+  await page.mouse.wheel(0, -100)
+  await expect.poll(async () => (await readViewBox()).width).toBeLessThan(smallZoomViewBox.width)
+  const largeZoomViewBox = await readViewBox()
+  expect(initialViewBox.width - largeZoomViewBox.width)
+    .toBeGreaterThan((initialViewBox.width - smallZoomViewBox.width) * 5)
+})
+
 test('selects curve labels and box-selects by the visible track center', async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
   const canvas = page.locator('svg[width="100%"][height="100%"]')

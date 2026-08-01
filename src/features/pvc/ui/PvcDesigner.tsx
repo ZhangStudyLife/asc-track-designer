@@ -4,6 +4,7 @@ import { MiniMap } from './components/MiniMap'
 import { MeasurementOverlay } from './components/MeasurementOverlay'
 import { TrackCanvas } from './components/TrackCanvas'
 import { TrackPiecesLayer } from './components/TrackPiecesLayer'
+import { normalizeWheelDelta, zoomViewBox } from './viewport'
 import {
   findNearestConnectionPointInTargets,
   getConnectionPoints as getTrackConnectionPoints,
@@ -24,9 +25,6 @@ import type { ConnectionPoint, ConnectionPointRef, TrackPiece } from '../domain/
 import { openTextFile, saveBlobFile, saveTextFile } from '../../../shared/platform/files'
 import { isTauriRuntime } from '../../../shared/platform/runtime'
 
-const MIN_SCALE = 0.18
-const MAX_SCALE = 2.5
-const CANVAS_BOUNDS = { x: -2000, y: -1000, width: 4000, height: 2000 }
 const DESIGN_BOUNDS = { width: 3200, height: 1600, x: -1600, y: -800 }
 
 export default function PvcDesigner() {
@@ -223,6 +221,8 @@ export default function PvcDesigner() {
   const snapTargetsRef = React.useRef<ConnectionPoint[]>([])
   const pointerFrameRef = React.useRef<number | null>(null)
   const pendingPointerRef = React.useRef<{ clientX: number; clientY: number } | null>(null)
+  const zoomFrameRef = React.useRef<number | null>(null)
+  const pendingZoomRef = React.useRef<{ delta: number; clientX: number; clientY: number } | null>(null)
   const selectionBoxRef = React.useRef<{ x: number; y: number; width: number; height: number } | null>(null)
   const dragAnchorIdRef = React.useRef<number | null>(null)
   const piecesRef = React.useRef(getPvcPieces())
@@ -937,7 +937,7 @@ export default function PvcDesigner() {
   }
 
   // 统一的鼠标坐标转SVG坐标转换函数
-  const getClientSVGCoords = (clientX: number, clientY: number) => {
+  const getClientSVGCoords = React.useCallback((clientX: number, clientY: number) => {
     const svg = svgRef.current
     if (!svg) return { x: 0, y: 0 }
     
@@ -951,64 +951,48 @@ export default function PvcDesigner() {
     const coords = point.matrixTransform(matrix.inverse())
     
     return { x: coords.x, y: coords.y }
-  }
+  }, [])
 
   const getMouseSVGCoords = (e: React.MouseEvent) => getClientSVGCoords(e.clientX, e.clientY)
-
-  // 平滑缩放 - 限制最大视图为16M×8M，最小200×100，增强流畅性
-  const handleZoom = React.useCallback((delta: number, centerX?: number, centerY?: number) => {
-    const zoomFactor = delta > 0 ? 1.15 : 0.85
-
-    setViewBox(currentViewBox => {
-      const newWidth = Math.max(150, Math.min(8000, currentViewBox.width * zoomFactor))
-      const newHeight = Math.max(75, Math.min(4000, currentViewBox.height * zoomFactor))
-      const newScale = 1000 / newWidth
-
-      if (newScale < MIN_SCALE || newScale > MAX_SCALE) return currentViewBox
-
-      const centerViewX = centerX !== undefined ? centerX : currentViewBox.x + currentViewBox.width / 2
-      const centerViewY = centerY !== undefined ? centerY : currentViewBox.y + currentViewBox.height / 2
-      let newX = centerViewX - newWidth / 2
-      let newY = centerViewY - newHeight / 2
-
-      if (newX < CANVAS_BOUNDS.x) newX = CANVAS_BOUNDS.x
-      if (newY < CANVAS_BOUNDS.y) newY = CANVAS_BOUNDS.y
-      if (newX + newWidth > CANVAS_BOUNDS.x + CANVAS_BOUNDS.width) newX = CANVAS_BOUNDS.x + CANVAS_BOUNDS.width - newWidth
-      if (newY + newHeight > CANVAS_BOUNDS.y + CANVAS_BOUNDS.height) newY = CANVAS_BOUNDS.y + CANVAS_BOUNDS.height - newHeight
-
-      return { x: newX, y: newY, width: newWidth, height: newHeight }
-    })
-  }, [])
 
   // 滚轮缩放
   React.useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
-      if (e.ctrlKey) {
-        e.preventDefault()
-        const svg = svgRef.current
-        if (svg) {
-          const rect = svg.getBoundingClientRect()
-          const mouseX = e.clientX - rect.left
-          const mouseY = e.clientY - rect.top
-          
-          // 转换到SVG坐标
-          const currentViewBox = viewBoxRef.current
-          const svgX = (mouseX / rect.width) * currentViewBox.width + currentViewBox.x
-          const svgY = (mouseY / rect.height) * currentViewBox.height + currentViewBox.y
-          
-          // 优化缩放响应，更灵敏的滚轮控制
-          const zoomDelta = e.deltaY > 0 ? -1 : 1
-          handleZoom(zoomDelta, svgX, svgY)
+      e.preventDefault()
+      const svg = svgRef.current
+      if (svg) {
+        const delta = normalizeWheelDelta(e.deltaY, e.deltaMode, svg.clientHeight)
+        const pending = pendingZoomRef.current
+        pendingZoomRef.current = {
+          delta: (pending?.delta || 0) + delta,
+          clientX: e.clientX,
+          clientY: e.clientY,
         }
+
+        if (zoomFrameRef.current !== null) return
+        zoomFrameRef.current = requestAnimationFrame(() => {
+          zoomFrameRef.current = null
+          const zoom = pendingZoomRef.current
+          pendingZoomRef.current = null
+          if (!zoom) return
+
+          const anchor = getClientSVGCoords(zoom.clientX, zoom.clientY)
+          setViewBox(currentViewBox => zoomViewBox(currentViewBox, anchor, zoom.delta))
+        })
       }
     }
 
     const svg = svgRef.current
     if (svg) {
       svg.addEventListener('wheel', handleWheel, { passive: false })
-      return () => svg.removeEventListener('wheel', handleWheel)
+      return () => {
+        svg.removeEventListener('wheel', handleWheel)
+        if (zoomFrameRef.current !== null) cancelAnimationFrame(zoomFrameRef.current)
+        zoomFrameRef.current = null
+        pendingZoomRef.current = null
+      }
     }
-  }, [handleZoom])
+  }, [getClientSVGCoords])
 
   // 键盘控制：Tab键旋转，Delete键删除，ESC取消旋转，Ctrl+A全选，快捷键操作
   const saveAsArchiveRef = React.useRef(saveAsArchive)
