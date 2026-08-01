@@ -6,6 +6,7 @@ import {
   getConnectionPoints,
   getDistance,
   getSnapTargets,
+  getTrackPieceVisualCenter,
   SNAP_DISTANCE,
   TRACK_RENDER_SCALE,
 } from './geometry'
@@ -53,6 +54,30 @@ describe('track geometry compatibility', () => {
     expect(points[1].y).toBeCloseTo(200)
     expect(points[1].angle).toBe(0)
     expect(points[1].type).toBe('end')
+  })
+
+  it('uses the visible track midpoint for selection', () => {
+    const straightCenter = getTrackPieceVisualCenter({
+      id: 1,
+      type: 'straight',
+      x: 100,
+      y: 200,
+      rotation: 90,
+      params: { length: 50 },
+    })
+    expect(straightCenter.x).toBeCloseTo(100)
+    expect(straightCenter.y).toBeCloseTo(250)
+
+    const curveCenter = getTrackPieceVisualCenter({
+      id: 2,
+      type: 'curve',
+      x: 100,
+      y: -100,
+      rotation: 90,
+      params: { radius: 50, angle: 90 },
+    })
+    expect(curveCenter.x).toBeCloseTo(29.2893218813)
+    expect(curveCenter.y).toBeCloseTo(-29.2893218813)
   })
 
   it('finds the nearest snap and preserves the strict distance threshold', () => {

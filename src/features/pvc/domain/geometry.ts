@@ -7,6 +7,24 @@ export function getDistance(a: TrackPoint, b: TrackPoint) {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)
 }
 
+export function getTrackPieceVisualCenter(piece: TrackPiece): TrackPoint {
+  if (piece.type === 'straight') {
+    const offset = piece.params.length * TRACK_RENDER_SCALE / 2
+    const angle = (piece.rotation || 0) * Math.PI / 180
+    return {
+      x: piece.x + offset * Math.cos(angle),
+      y: piece.y + offset * Math.sin(angle),
+    }
+  }
+
+  const radius = piece.params.radius * TRACK_RENDER_SCALE
+  const angle = ((piece.rotation || 0) + piece.params.angle / 2) * Math.PI / 180
+  return {
+    x: piece.x + radius * Math.cos(angle),
+    y: piece.y + radius * Math.sin(angle),
+  }
+}
+
 export function getConnectionPoints(piece: TrackPiece): ConnectionPoint[] {
   if (piece.type === 'straight') {
     const length = piece.params.length * TRACK_RENDER_SCALE

@@ -8,6 +8,7 @@ import {
   findNearestConnectionPointInTargets,
   getConnectionPoints as getTrackConnectionPoints,
   getSnapTargets,
+  getTrackPieceVisualCenter,
   SNAP_DISTANCE,
 } from '../domain/geometry'
 import { parseTrackCode } from '../domain/parser'
@@ -1097,11 +1098,12 @@ export default function PvcDesigner() {
   }, [setPieces])
 
   // 框选检测
-  const isInSelectionBox = (piece: any, box: {x: number, y: number, width: number, height: number}) => {
-    return piece.x >= box.x && 
-           piece.x <= box.x + box.width && 
-           piece.y >= box.y && 
-           piece.y <= box.y + box.height
+  const isInSelectionBox = (piece: TrackPiece, box: {x: number, y: number, width: number, height: number}) => {
+    const center = getTrackPieceVisualCenter(piece)
+    return center.x >= box.x &&
+           center.x <= box.x + box.width &&
+           center.y >= box.y &&
+           center.y <= box.y + box.height
   }
 
   // 双击旋转功能
@@ -2296,7 +2298,8 @@ export default function PvcDesigner() {
           strokeWidth: 1.5,
           strokeDasharray: '4,2',
           rx: 2,
-          ry: 2
+          ry: 2,
+          pointerEvents: 'none'
         }) : null
       ].filter(Boolean)),
 

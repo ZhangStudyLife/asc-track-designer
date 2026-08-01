@@ -37,6 +37,7 @@ function TrackPieceView({
     fill: type === 'start' ? '#10b981' : '#dc2626',
     stroke: type === 'start' ? '#065f46' : '#7f1d1d',
     strokeWidth: 1,
+    pointerEvents: (isMeasuring || isAutoFill) ? 'auto' : 'none',
     style: {
       cursor: (isMeasuring || isAutoFill) ? 'crosshair' : 'not-allowed',
       opacity: (isMeasuring || isAutoFill) ? 1 : 0.5,
@@ -79,7 +80,7 @@ function TrackPieceView({
           fontSize="16px"
           fill={isDark ? '#0f172a' : '#facc15'}
           fontWeight="bold"
-          style={{ userSelect: 'none' }}
+          style={{ userSelect: 'none', pointerEvents: 'none' }}
         >
           {`L${piece.params.length}`}
         </text>
@@ -119,7 +120,7 @@ function TrackPieceView({
           onMouseDown={(event) => onMouseDown(event, piece)}
           onDoubleClick={() => onDoubleClick(piece)}
         />
-        <circle cx={0} cy={0} r={3} fill="#00ff00" stroke="#000" strokeWidth={1} />
+        <circle cx={0} cy={0} r={3} fill="#00ff00" stroke="#000" strokeWidth={1} pointerEvents="none" />
         <text
           x={centerRadius * Math.cos(angleRad / 2)}
           y={centerRadius * Math.sin(angleRad / 2)}
@@ -127,7 +128,7 @@ function TrackPieceView({
           fontSize="16px"
           fill={isDark ? '#0f172a' : '#facc15'}
           fontWeight="bold"
-          style={{ userSelect: 'none' }}
+          style={{ userSelect: 'none', pointerEvents: 'none' }}
         >
           {`R${piece.params.radius}-${piece.params.angle}`}
         </text>

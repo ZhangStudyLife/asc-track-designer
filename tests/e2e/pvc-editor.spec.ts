@@ -73,6 +73,42 @@ test('loads the Vite editor and keeps add, drag, zoom, and box selection working
   await page.mouse.up()
 })
 
+test('selects curve labels and box-selects by the visible track center', async ({ page }) => {
+  await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
+  const canvas = page.locator('svg[width="100%"][height="100%"]')
+  const curve = canvas.locator('g[data-piece-id="2"]')
+  const curvePath = curve.locator('path')
+
+  const labelBox = await curve.locator('text').boundingBox()
+  expect(labelBox).not.toBeNull()
+  await page.mouse.click(
+    labelBox!.x + labelBox!.width / 2,
+    labelBox!.y + labelBox!.height / 2,
+  )
+  await expect(curvePath).toHaveAttribute('stroke', '#ef4444')
+
+  const [start, end] = await canvas.evaluate((element, points) => {
+    const svg = element as SVGSVGElement
+    const matrix = svg.getScreenCTM()!
+    return points.map((point) => {
+      const svgPoint = svg.createSVGPoint()
+      svgPoint.x = point.x
+      svgPoint.y = point.y
+      const screenPoint = svgPoint.matrixTransform(matrix)
+      return { x: screenPoint.x, y: screenPoint.y }
+    })
+  }, [{ x: 80, y: -90 }, { x: -20, y: -5 }])
+
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(end.x, end.y)
+  await page.mouse.up()
+
+  await expect(curvePath).toHaveAttribute('stroke', '#ef4444')
+  await expect(canvas.locator('g[data-piece-id="1"] rect')).not.toHaveAttribute('stroke', '#ef4444')
+  await expect(canvas.locator('g[data-piece-id="3"] rect')).not.toHaveAttribute('stroke', '#ef4444')
+})
+
 test('imports the legacy JSON format and persists the selected theme', async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(
     fixture('connected.json'),
