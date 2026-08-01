@@ -23,6 +23,10 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:e2e": "playwright test",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:check": "cargo check --manifest-path src-tauri/Cargo.toml",
+    "tauri:build": "tauri build --no-bundle",
     "clean": "rimraf .next out dist release node_modules"
   },
   "build": {
@@ -75,6 +79,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.54.1",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^20.17.9",
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.3.7",
@@ -95,6 +100,9 @@
     "wait-on": "^8.0.1"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-fs": "^2.5.1",
     "zustand": "^5.0.8"
   }
 }

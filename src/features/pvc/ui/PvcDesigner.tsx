@@ -20,6 +20,8 @@ import {
   undoPiecesHistory,
 } from '../application/storage'
 import type { ConnectionPoint, ConnectionPointRef, TrackPiece } from '../domain/types'
+import { openTextFile, saveBlobFile, saveTextFile } from '../../../shared/platform/files'
+import { isTauriRuntime } from '../../../shared/platform/runtime'
 
 const MIN_SCALE = 0.18
 const MAX_SCALE = 2.5
@@ -526,7 +528,7 @@ export default function PvcDesigner() {
   }
 
   // 保存赛道为JSON文件
-  const exportTrackAsJSON = () => {
+  const exportTrackAsJSON = async () => {
     if (piecesRef.current.length === 0) {
       alert('没有赛道可导出')
       return
@@ -538,116 +540,134 @@ export default function PvcDesigner() {
       bounds: DESIGN_BOUNDS,
       pieces: piecesRef.current
     }
-    const blob = new Blob([JSON.stringify(trackData, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `track_${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-    
-    showStatusMessage(`赛道数据已导出为JSON文件`, 3000)
+    const fileName = `track_${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.json`
+
+    try {
+      if (await saveTextFile(fileName, JSON.stringify(trackData, null, 2))) {
+        showStatusMessage('赛道数据已导出为JSON文件', 3000)
+      }
+    } catch (error) {
+      console.error('Failed to export track JSON:', error)
+      alert('导出失败，请检查文件保存位置后重试')
+    }
   }
 
   // 加载JSON文件 - 增强兼容性
+  const loadTrackText = (contents: string) => {
+    try {
+      const trackData = JSON.parse(contents)
+        
+      // 兼容不同格式的JSON文件 - 修正判断顺序
+      let piecesToLoad: any[] = []
+        
+      // 优先检查最具体的格式：有 totalPieces 和 details
+      if (trackData.totalPieces && trackData.details && Array.isArray(trackData.details)) {
+        console.log('识别为完整导出信息格式')
+        piecesToLoad = trackData.details.map((detail: any, index: number) => ({
+          id: Date.now() + index,
+          type: detail.type,
+          x: detail.position?.x !== undefined ? detail.position.x : (viewBox.x + viewBox.width / 2),
+          y: detail.position?.y !== undefined ? detail.position.y : (viewBox.y + viewBox.height / 2),
+          rotation: detail.rotation !== undefined ? detail.rotation : 0,
+          params: detail.params
+        }))
+      } else if (trackData.pieces && Array.isArray(trackData.pieces)) {
+        console.log('识别为标准格式')
+        piecesToLoad = trackData.pieces
+      } else if (trackData.details && Array.isArray(trackData.details)) {
+        console.log('识别为简单details格式')
+        piecesToLoad = trackData.details.map((detail: any, index: number) => ({
+          id: Date.now() + index,
+          type: detail.type,
+          x: detail.position?.x !== undefined ? detail.position.x : (viewBox.x + viewBox.width / 2),
+          y: detail.position?.y !== undefined ? detail.position.y : (viewBox.y + viewBox.height / 2),
+          rotation: detail.rotation !== undefined ? detail.rotation : 0,
+          params: detail.params
+        }))
+      } else if (Array.isArray(trackData)) {
+        console.log('识别为数组格式')
+        piecesToLoad = trackData.map((piece: any, index: number) => ({
+          ...piece,
+          id: piece.id || Date.now() + index,
+          x: piece.x !== undefined ? piece.x : (viewBox.x + viewBox.width / 2),
+          y: piece.y !== undefined ? piece.y : (viewBox.y + viewBox.height / 2),
+          rotation: piece.rotation || 0
+        }))
+      } else {
+        console.log('未识别的格式，数据结构:', Object.keys(trackData))
+      }
+        
+      if (piecesToLoad.length > 0) {
+        // 验证每个元件的参数完整性
+        const validPieces = piecesToLoad.filter((piece: any) => {
+          // 基本结构检查
+          if (!piece || typeof piece !== 'object') return false
+          if (!piece.type || (piece.type !== 'straight' && piece.type !== 'curve')) return false
+          if (!piece.params || typeof piece.params !== 'object') return false
+            
+          // 类型特定检查
+          if (piece.type === 'straight') {
+            return typeof piece.params.length === 'number' && piece.params.length > 0
+          }
+          if (piece.type === 'curve') {
+            return typeof piece.params.radius === 'number' && piece.params.radius > 0 &&
+                   typeof piece.params.angle === 'number' && piece.params.angle > 0 && piece.params.angle <= 360
+          }
+          return false
+        }).map((piece: any, index: number) => ({
+          ...piece,
+          id: piece.id || Date.now() + index,
+          x: typeof piece.x === 'number' ? piece.x : (viewBox.x + viewBox.width / 2),
+          y: typeof piece.y === 'number' ? piece.y : (viewBox.y + viewBox.height / 2),
+          rotation: typeof piece.rotation === 'number' ? piece.rotation : 0
+        }))
+          
+        if (validPieces.length > 0) {
+          setPieces(validPieces)
+          setSelectedId(null)
+          setSelectedIds([])
+            
+          if (validPieces.length < piecesToLoad.length) {
+            alert(`成功加载 ${validPieces.length} 个赛道元件，${piecesToLoad.length - validPieces.length} 个元件因参数不完整被跳过`)
+          } else {
+            alert(`成功加载 ${validPieces.length} 个赛道元件`)
+          }
+        } else {
+          alert('文件中没有找到有效的赛道数据')
+        }
+      } else {
+        alert('文件中没有找到赛道数据')
+      }
+    } catch (error) {
+      alert('文件格式错误，请选择有效的赛道JSON文件')
+    }
+  }
+
   const loadTrackFromJSON = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    
+
     const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const trackData = JSON.parse(e.target?.result as string)
-        
-        // 兼容不同格式的JSON文件 - 修正判断顺序
-        let piecesToLoad: any[] = []
-        
-        // 优先检查最具体的格式：有 totalPieces 和 details
-        if (trackData.totalPieces && trackData.details && Array.isArray(trackData.details)) {
-          console.log('识别为完整导出信息格式')
-          piecesToLoad = trackData.details.map((detail: any, index: number) => ({
-            id: Date.now() + index,
-            type: detail.type,
-            x: detail.position?.x !== undefined ? detail.position.x : (viewBox.x + viewBox.width / 2),
-            y: detail.position?.y !== undefined ? detail.position.y : (viewBox.y + viewBox.height / 2),
-            rotation: detail.rotation !== undefined ? detail.rotation : 0,
-            params: detail.params
-          }))
-        } else if (trackData.pieces && Array.isArray(trackData.pieces)) {
-          console.log('识别为标准格式')
-          piecesToLoad = trackData.pieces
-        } else if (trackData.details && Array.isArray(trackData.details)) {
-          console.log('识别为简单details格式')
-          piecesToLoad = trackData.details.map((detail: any, index: number) => ({
-            id: Date.now() + index,
-            type: detail.type,
-            x: detail.position?.x !== undefined ? detail.position.x : (viewBox.x + viewBox.width / 2),
-            y: detail.position?.y !== undefined ? detail.position.y : (viewBox.y + viewBox.height / 2),
-            rotation: detail.rotation !== undefined ? detail.rotation : 0,
-            params: detail.params
-          }))
-        } else if (Array.isArray(trackData)) {
-          console.log('识别为数组格式')
-          piecesToLoad = trackData.map((piece: any, index: number) => ({
-            ...piece,
-            id: piece.id || Date.now() + index,
-            x: piece.x !== undefined ? piece.x : (viewBox.x + viewBox.width / 2),
-            y: piece.y !== undefined ? piece.y : (viewBox.y + viewBox.height / 2),
-            rotation: piece.rotation || 0
-          }))
-        } else {
-          console.log('未识别的格式，数据结构:', Object.keys(trackData))
-        }
-        
-        if (piecesToLoad.length > 0) {
-          // 验证每个元件的参数完整性
-          const validPieces = piecesToLoad.filter((piece: any) => {
-            // 基本结构检查
-            if (!piece || typeof piece !== 'object') return false
-            if (!piece.type || (piece.type !== 'straight' && piece.type !== 'curve')) return false
-            if (!piece.params || typeof piece.params !== 'object') return false
-            
-            // 类型特定检查
-            if (piece.type === 'straight') {
-              return typeof piece.params.length === 'number' && piece.params.length > 0
-            }
-            if (piece.type === 'curve') {
-              return typeof piece.params.radius === 'number' && piece.params.radius > 0 &&
-                     typeof piece.params.angle === 'number' && piece.params.angle > 0 && piece.params.angle <= 360
-            }
-            return false
-          }).map((piece: any, index: number) => ({
-            ...piece,
-            id: piece.id || Date.now() + index,
-            x: typeof piece.x === 'number' ? piece.x : (viewBox.x + viewBox.width / 2),
-            y: typeof piece.y === 'number' ? piece.y : (viewBox.y + viewBox.height / 2),
-            rotation: typeof piece.rotation === 'number' ? piece.rotation : 0
-          }))
-          
-          if (validPieces.length > 0) {
-            setPieces(validPieces)
-            setSelectedId(null)
-            setSelectedIds([])
-            
-            if (validPieces.length < piecesToLoad.length) {
-              alert(`成功加载 ${validPieces.length} 个赛道元件，${piecesToLoad.length - validPieces.length} 个元件因参数不完整被跳过`)
-            } else {
-              alert(`成功加载 ${validPieces.length} 个赛道元件`)
-            }
-          } else {
-            alert('文件中没有找到有效的赛道数据')
-          }
-        } else {
-          alert('文件中没有找到赛道数据')
-        }
-      } catch (error) {
-        alert('文件格式错误，请选择有效的赛道JSON文件')
-      }
-    }
+    reader.onload = () => loadTrackText(reader.result as string)
     reader.readAsText(file)
-    
+
     // 清空input以允许重新选择同一文件
     event.target.value = ''
+  }
+
+  const openTrackFromJSON = async () => {
+    if (!isTauriRuntime()) {
+      document.getElementById('file-input')?.click()
+      return
+    }
+
+    try {
+      const file = await openTextFile()
+      if (file) loadTrackText(file.contents)
+    } catch (error) {
+      console.error('Failed to open track JSON:', error)
+      alert('打开失败，请检查文件后重试')
+    }
   }
 
   // 导出为图片 - 导出完整16M×8M区域
@@ -740,18 +760,20 @@ export default function PvcDesigner() {
       }
       
       // 导出高质量PNG
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const link = document.createElement('a')
-          const downloadUrl = URL.createObjectURL(blob)
-          link.download = `track_design_${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.png`
-          link.href = downloadUrl
-          link.click()
-          setTimeout(() => URL.revokeObjectURL(downloadUrl), 0)
+      canvas.toBlob(async (blob) => {
+        try {
+          if (blob) {
+            const fileName = `track_design_${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.png`
+            await saveBlobFile(fileName, blob)
+          }
+        } catch (error) {
+          console.error('Failed to export track image:', error)
+          alert('图片导出失败，请检查文件保存位置后重试')
+        } finally {
+          canvas.width = 0
+          canvas.height = 0
+          URL.revokeObjectURL(svgUrl)
         }
-        canvas.width = 0
-        canvas.height = 0
-        URL.revokeObjectURL(svgUrl)
       }, 'image/png', 1.0)
     }
 
@@ -771,7 +793,7 @@ export default function PvcDesigner() {
 
   // 导出赛道尺寸信息
   // 导出赛道尺寸信息
-  const exportTrackInfo = () => {
+  const exportTrackInfo = async () => {
     const stats = calculateTrackStats()
     const currentPieces = piecesRef.current
     
@@ -797,13 +819,14 @@ export default function PvcDesigner() {
       }))
     }
     
-    const blob = new Blob([JSON.stringify(info, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `track_info_${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    const fileName = `track_info_${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.json`
+
+    try {
+      await saveTextFile(fileName, JSON.stringify(info, null, 2))
+    } catch (error) {
+      console.error('Failed to export track info:', error)
+      alert('导出失败，请检查文件保存位置后重试')
+    }
   }
 
   // 添加自定义赛道并永久保存尺寸
@@ -988,8 +1011,10 @@ export default function PvcDesigner() {
   // 键盘控制：Tab键旋转，Delete键删除，ESC取消旋转，Ctrl+A全选，快捷键操作
   const saveAsArchiveRef = React.useRef(saveAsArchive)
   const exportAsImageRef = React.useRef(exportAsImage)
+  const openTrackFromJSONRef = React.useRef(openTrackFromJSON)
   saveAsArchiveRef.current = saveAsArchive
   exportAsImageRef.current = exportAsImage
+  openTrackFromJSONRef.current = openTrackFromJSON
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1003,7 +1028,7 @@ export default function PvcDesigner() {
       // Ctrl+O 打开
       if (e.ctrlKey && e.key === 'o') {
         e.preventDefault()
-        document.getElementById('file-input')?.click()
+        void openTrackFromJSONRef.current()
         return
       }
       
@@ -2048,28 +2073,27 @@ export default function PvcDesigner() {
           }, '添加')
         ]),
 
-        React.createElement('label', {
-          key: 'load-label',
+        React.createElement('button', {
+          key: 'load-button',
+          onClick: openTrackFromJSON,
           style: {
             ...buttonBase,
             backgroundColor: isDark ? '#12304a' : '#e0f2fe',
             color: isDark ? '#bae6fd' : '#0369a1',
             borderColor: isDark ? '#1e4f76' : '#7dd3fc',
             cursor: 'pointer',
-            userSelect: 'none',
-            display: 'inline-block'
+            userSelect: 'none'
           }
-        }, [
-          '📁 导入JSON',
-          React.createElement('input', {
-            key: 'load-input',
-            id: 'file-input',
-            type: 'file',
-            accept: '.json',
-            onChange: loadTrackFromJSON,
-            style: { display: 'none' }
-          })
-        ]),
+        }, '📁 导入JSON'),
+
+        React.createElement('input', {
+          key: 'load-input',
+          id: 'file-input',
+          type: 'file',
+          accept: '.json',
+          onChange: loadTrackFromJSON,
+          style: { display: 'none' }
+        }),
 
         React.createElement('button', {
           key: 'export-image',

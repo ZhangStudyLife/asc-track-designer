@@ -10,6 +10,8 @@ out/
 dist/
 release/
 build/
+src-tauri/gen/
+src-tauri/target*/
 *.tsbuildinfo
 
 # Environment
