@@ -1,91 +1,52 @@
 # ASC Track Designer
 
-ASC Track Designer is a Next.js and Electron application for designing intelligent car race tracks. The app provides a visual editor for arranging track pieces, measuring distances, snapping connections, and exporting designs.
+ASC Track Designer is a React and TypeScript editor for laying out PVC intelligent-car tracks. The desktop application uses Tauri 2 and the system WebView2 runtime; the same Vite frontend can be deployed as a static website.
 
 ## Requirements
 
-- Node.js 20 or newer
-- npm
-- Windows is recommended for Electron packaging because the configured build target is Windows x64.
-
-## Install
-
-```bash
-npm install
-```
+- Node.js 20 or newer and npm
+- Rustup with the repository-selected Windows GNU toolchain
+- Microsoft Edge WebView2 Runtime
 
 ## Development
 
-Run the desktop development app:
-
 ```bash
+npm install
 npm run dev
 ```
 
-This starts the Next.js dev server on `http://localhost:3000`, waits for it to become available, and then opens the Electron shell.
-
-Run only the production web server after building:
-
-```bash
-npm run start:next
-```
-
-Run Electron directly:
-
-```bash
-npm run start
-```
+`npm run dev` starts Vite and opens the Tauri desktop window. Use `npm run dev:web` when only the browser frontend is needed.
 
 ## Build and Package
 
-Create a production Next.js build:
-
 ```bash
 npm run build
-```
-
-Package the Electron app:
-
-```bash
-npm run dist
-```
-
-Package the Windows x64 build:
-
-```bash
 npm run dist:win
 ```
 
-Generated build output is ignored by git. Electron packages are written to `release/`.
+`npm run build` creates the static Vite site in `dist/`. `npm run dist:win` builds the optimized Tauri application and writes the single portable executable to `release/ASC.2.0.2.exe`. WebView2 remains a Windows system dependency. On first launch, the EXE writes its embedded 160 KB WebView2 loader to the user's application-data directory; no sibling DLL or Node.js server is required.
+
+## Quality Checks
+
+```bash
+npm run lint
+npm run typecheck
+npm run test:run
+npm run test:e2e
+npm run tauri:check
+```
 
 ## Project Structure
 
 ```text
-.
-├── electron.js          # Electron main process
-├── package.json         # npm scripts, dependencies, Electron Builder config
-├── public/              # static assets, including icons and logo
-├── src/
-│   ├── app/             # Next.js App Router UI and styles
-│   └── types/           # local TypeScript declarations
-├── next.config.js       # Next.js configuration
-└── tsconfig.json        # TypeScript configuration
+src/app/                    application shell and global styles
+src/features/pvc/domain/    geometry, parsing, statistics, and types
+src/features/pvc/application/ editor state, history, and storage
+src/features/pvc/ui/        PVC editor and SVG rendering components
+src/shared/                 platform adapters and legacy data migration
+src-tauri/                  Rust entry point, permissions, and app metadata
+public/                     web assets and product icon
+tests/                      Playwright browser workflows and fixtures
 ```
 
-## Quality Checks
-
-Run lint checks before submitting changes:
-
-```bash
-npm run lint
-```
-
-Run a production build for changes that affect app behavior, assets, or packaging:
-
-```bash
-npm run build
-```
-
-## Configuration
-
-Use `.env.example` as the template for local environment variables. Do not commit real secrets or generated folders such as `.next/`, `out/`, `release/`, or `node_modules/`.
+Generated folders such as `dist/`, `release/`, `src-tauri/target/`, and `node_modules/` are ignored by git.

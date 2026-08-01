@@ -51,3 +51,25 @@ Measured after replacing the Next.js standalone server with a Vite static build 
 - Idle process working set: 355,639,296 bytes (339.2 MiB).
 
 This is an intermediate rollback point. It proves that removing the embedded HTTP server fixes most startup delay, while the remaining Chromium processes justify completing the Tauri migration.
+
+## Final Tauri 2 Release
+
+Measured after retiring Next.js and Electron and building the single-file Tauri release:
+
+- Vite production JavaScript: 204.40 kB, 64.89 kB gzip.
+- Artifact: `release/ASC.2.0.2.exe`.
+- Size: 20,617,216 bytes (19.66 MiB).
+- Empty-folder verification: one file present; window visible in 1,041 ms on the final run.
+- Native `Ctrl+O` opened the Windows file dialog.
+- The embedded 160,320-byte WebView2 loader was written to the versioned application-data runtime directory; the EXE has no `WebView2Loader.dll` import or sibling DLL requirement.
+- Legacy Electron state was imported and marked without deleting the source backup.
+
+After 30 seconds idle, the application used seven processes:
+
+| Measurement | Result |
+| --- | ---: |
+| Tauri parent working set | 27.2 MiB |
+| Total private memory | 212.4 MiB |
+| Total process working set | 379.9 MiB |
+
+Disabling WebView2 background networking, component updates, synchronization, and metrics reduced the total from 405.2 MiB to 379.9 MiB. The 180 MiB working-set target is not met: the remaining usage is dominated by the system WebView2 browser, renderer, GPU, and utility processes rather than the application process. GPU acceleration remains enabled because disabling it would trade memory for drag and zoom responsiveness. The browser regression suite still passes the 200-piece isolated-drag check with its p95 frame-time guard below 35 ms; the stricter 20 ms target has not been independently proven on the desktop WebView2 shell.

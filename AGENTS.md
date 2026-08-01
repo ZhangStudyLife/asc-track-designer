@@ -2,45 +2,28 @@
 
 ## Project Structure & Module Organization
 
-This repository is a small Next.js 15 + React 18 application packaged with Electron. The main UI lives in `src/app/page.tsx`, with app metadata and layout in `src/app/layout.tsx` and shared styles in `src/app/globals.css`. Static assets, including the app icon and lab logo, are in `public/`. Electron startup logic is in `electron.js`. Keep root-level files limited to required app, build, and contributor files.
+The Vite entry is `src/main.tsx`; `src/app/` contains the application shell and global styles. PVC behavior is grouped under `src/features/pvc/`: pure geometry, parsing, statistics, and types live in `domain/`; Zustand state, history, and storage live in `application/`; React and SVG components live in `ui/`. Shared browser/Tauri adapters are under `src/shared/`. The Rust desktop shell, permissions, icon, and Tauri configuration are in `src-tauri/`; `src-tauri/vendor/` contains the narrow WebView2 loader patch required by the single-file GNU build. Static web assets are in `public/`, and Playwright workflows are in `tests/e2e/`.
 
 ## Build, Test, and Development Commands
 
-Install dependencies with:
-
-```bash
-npm install
-```
-
-Run the desktop development app:
-
-```bash
-npm run dev
-```
-
-This starts Next.js on `localhost:3000`, waits for it, then launches Electron.
-
-Useful scripts:
-
-- `npm run build`: creates a production Next.js build.
-- `npm run start:next`: serves the built web app with Next.js.
-- `npm run start`: launches Electron directly.
-- `npm run dist:win`: builds a Windows x64 Electron package in `release/`.
-- `npm run lint`: runs the configured Next.js ESLint check.
-- `npm run clean`: removes generated build output and `node_modules`.
+- `npm install`: install frontend and Tauri CLI dependencies.
+- `npm run dev`: start Vite and open the Tauri desktop app.
+- `npm run dev:web`: run only the browser version on `127.0.0.1:5173`.
+- `npm run build`: type-check and build static assets into `dist/`.
+- `npm run dist:win`: produce `release/ASC.2.0.2.exe` as one portable file.
+- `npm run lint`: lint TypeScript and TSX files.
+- `npm run test:run`: run the Vitest suite once.
+- `npm run test:e2e`: run Playwright PVC workflows.
+- `npm run tauri:check`: check the Rust desktop shell without packaging.
 
 ## Coding Style & Naming Conventions
 
-Use TypeScript and React function components. Match the existing compact style in `src/app`: two-space indentation is not enforced, semicolons are used inconsistently, and imports generally stay minimal. Prefer clear local state names such as `isDragging`, `measurePoints`, or `handleMeasurePointClick`. Keep UI changes inside the relevant app files unless shared styling truly belongs in `globals.css`.
+Use TypeScript, React function components, and the existing compact style. Keep domain modules free of React and Tauri imports. Use `PascalCase` for components and types, `camelCase` for functions and state, and descriptive event names such as `handleCanvasMouseDown`. Do not change geometry constants or formulas while reorganizing UI code. ESLint uses `.eslintrc.json`; TypeScript validation uses `tsc --noEmit`.
 
 ## Testing Guidelines
 
-No dedicated test framework or `tests/` directory is currently present. For now, verify changes with `npm run lint` and the smallest relevant manual workflow in `npm run dev`. If tests are added later, place them near the code they cover or under a clear `tests/` directory, and document the new command in `package.json`.
+Vitest files use `*.test.ts` beside the module they cover. Browser tests use `*.spec.ts` under `tests/e2e/`. Any PVC interaction change must preserve add, drag, snap, selection, measurement, auto-fill, import/export, undo/redo, and keyboard behavior. Run lint, unit tests, the production build, and the smallest relevant Playwright workflow.
 
 ## Commit & Pull Request Guidelines
 
-Recent history uses short Chinese summaries and occasional Conventional Commit prefixes such as `feat:` and `fix:`. Prefer `feat: ...`, `fix: ...`, or a concise Chinese imperative summary. Pull requests should describe the user-visible change, list verification steps, link related issues when available, and include screenshots or exported images for visual track-designer changes.
-
-## Security & Configuration Tips
-
-Use `.env.example` as the template for local configuration. Do not commit real secrets, generated `release/` artifacts, `.next/`, `out/`, or `node_modules/`.
+Use concise Conventional Commit messages such as `feat: ...`, `fix: ...`, or `refactor: ...`. Pull requests should explain user-visible behavior, list verification commands, link related issues, and include screenshots for visual changes. Never commit `dist/`, `release/`, `src-tauri/target/`, or `node_modules/`.

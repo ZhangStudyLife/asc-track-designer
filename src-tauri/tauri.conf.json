@@ -19,7 +19,8 @@
         "minWidth": 960,
         "minHeight": 640,
         "center": true,
-        "visible": true
+        "visible": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-networking --disable-component-update --disable-domain-reliability --disable-sync --metrics-recording-only"
       }
     ],
     "security": {

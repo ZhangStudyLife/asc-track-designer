@@ -21,3 +21,6 @@ tauri-plugin-fs = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }
+
+[patch.crates-io]
+webview2-com-sys = { path = "vendor/webview2-com-sys" }

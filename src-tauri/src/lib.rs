@@ -1,5 +1,7 @@
 use std::{fs, path::PathBuf};
 
+const WEBVIEW2_LOADER: &[u8] = include_bytes!("../vendor/webview2-com-sys/x64/WebView2Loader.dll");
+
 fn migration_directory() -> Result<PathBuf, String> {
     std::env::var_os("APPDATA")
         .map(PathBuf::from)
@@ -19,7 +21,9 @@ fn read_legacy_migration() -> Result<Option<String>, String> {
         return Ok(None);
     }
 
-    fs::read_to_string(source).map(Some).map_err(|error| error.to_string())
+    fs::read_to_string(source)
+        .map(Some)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -28,6 +32,26 @@ fn mark_legacy_migration_imported() -> Result<(), String> {
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
     fs::write(directory.join("migration-state-v1.imported"), b"imported")
         .map_err(|error| error.to_string())
+}
+
+fn prepare_webview2_loader() -> Result<(), String> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .or_else(|| std::env::var_os("APPDATA"))
+        .map(PathBuf::from)
+        .ok_or_else(|| "Windows application data directory is unavailable".to_string())?;
+    let directory = base
+        .join("ASC Track Designer")
+        .join("runtime")
+        .join(env!("CARGO_PKG_VERSION"));
+    let path = directory.join("WebView2Loader.dll");
+
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    if fs::read(&path).ok().as_deref() != Some(WEBVIEW2_LOADER) {
+        fs::write(&path, WEBVIEW2_LOADER).map_err(|error| error.to_string())?;
+    }
+
+    std::env::set_var("ASC_WEBVIEW2_LOADER_PATH", path);
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -42,7 +66,12 @@ fn show_startup_error(message: &str) {
     .collect();
 
     unsafe {
-        MessageBoxW(std::ptr::null_mut(), body.as_ptr(), title.as_ptr(), MB_OK | MB_ICONERROR);
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
     }
 }
 
@@ -53,6 +82,11 @@ fn show_startup_error(message: &str) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Err(error) = prepare_webview2_loader() {
+        show_startup_error(&error);
+        return;
+    }
+
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
