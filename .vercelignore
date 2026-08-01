@@ -1,0 +1,13 @@
+*
+!.npmrc
+!.eslintrc.json
+!index.html
+!package.json
+!package-lock.json
+!tsconfig.json
+!vercel.json
+!vite.config.ts
+!public/
+!public/**
+!src/
+!src/**

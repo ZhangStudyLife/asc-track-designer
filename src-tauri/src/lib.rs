@@ -55,12 +55,45 @@ fn prepare_webview2_loader() -> Result<(), String> {
 }
 
 #[cfg(windows)]
+fn verify_webview2_runtime() -> Result<(), String> {
+    use webview2_com_sys::Microsoft::Web::WebView2::Win32::GetAvailableCoreWebView2BrowserVersionString;
+    use windows_core::{PCWSTR, PWSTR};
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+
+    let mut version = PWSTR::null();
+    unsafe {
+        GetAvailableCoreWebView2BrowserVersionString(PCWSTR::null(), &mut version)
+            .map_err(|error| format!("Microsoft Edge WebView2 Runtime is unavailable: {error}"))?;
+
+        if version.is_null() {
+            return Err(
+                "Microsoft Edge WebView2 Runtime returned no version information".to_string(),
+            );
+        }
+
+        let version_text = version.to_string().map_err(|error| error.to_string());
+        CoTaskMemFree(version.as_ptr().cast());
+
+        if version_text?.trim().is_empty() {
+            return Err("Microsoft Edge WebView2 Runtime returned an empty version".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn verify_webview2_runtime() -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(windows)]
 fn show_startup_error(message: &str) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
 
     let title: Vec<u16> = "ASC Track Designer\0".encode_utf16().collect();
     let body: Vec<u16> = format!(
-        "ASC Track Designer failed to start. Ensure Microsoft Edge WebView2 Runtime is installed.\n\n{message}\0"
+        "ASC Track Designer failed to start. Ensure Microsoft Edge WebView2 Runtime is installed.\n\nDownload: https://developer.microsoft.com/microsoft-edge/webview2/\n\n{message}\0"
     )
     .encode_utf16()
     .collect();
@@ -83,6 +116,10 @@ fn show_startup_error(message: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if let Err(error) = prepare_webview2_loader() {
+        show_startup_error(&error);
+        return;
+    }
+    if let Err(error) = verify_webview2_runtime() {
         show_startup_error(&error);
         return;
     }

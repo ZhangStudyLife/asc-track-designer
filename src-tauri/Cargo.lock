@@ -57,6 +57,8 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
+ "webview2-com-sys",
+ "windows-core 0.61.2",
  "windows-sys 0.59.0",
 ]
 

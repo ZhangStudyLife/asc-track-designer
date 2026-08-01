@@ -1,5 +1,8 @@
 import path from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
+
+const fixture = (name: string) => path.resolve(`tests/fixtures/pvc/${name}`)
 
 test.beforeEach(async ({ page }) => {
   page.on('dialog', (dialog) => dialog.accept())
@@ -72,7 +75,7 @@ test('loads the Vite editor and keeps add, drag, zoom, and box selection working
 
 test('imports the legacy JSON format and persists the selected theme', async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(
-    path.resolve('tests/fixtures/pvc/connected.json'),
+    fixture('connected.json'),
   )
   await expect(page.getByText(/元件数: 3/)).toBeVisible()
 
@@ -84,7 +87,7 @@ test('imports the legacy JSON format and persists the selected theme', async ({ 
 
 test('keeps a 200-piece drag responsive and isolated to the moved piece', async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(
-    path.resolve('tests/fixtures/pvc/200-pieces.json'),
+    fixture('200-pieces.json'),
   )
   await expect(page.getByText(/元件数: 200/)).toBeVisible()
 
@@ -137,4 +140,159 @@ test('keeps a 200-piece drag responsive and isolated to the moved piece', async 
   expect(await movedPiece.getAttribute('transform')).not.toBe(movedBefore)
   expect(await unchangedPiece.getAttribute('transform')).toBe(unchangedBefore)
   expect(p95).toBeLessThan(35)
+})
+
+test('keeps measurement and auto-fill behavior unchanged', async ({ page }) => {
+  await page.locator('input[type="file"]').setInputFiles(fixture('single-piece.json'))
+  const canvas = page.locator('svg[width="100%"][height="100%"]')
+  const firstPiece = canvas.locator('g[data-piece-id="1"]')
+
+  await page.getByRole('button', { name: '测量距离', exact: true }).first().click()
+  await firstPiece.locator('circle').nth(-2).click()
+  await firstPiece.locator('circle').nth(-1).click()
+  await expect(canvas.getByText('50.0 mm', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: '自动补全直道', exact: true }).click()
+  await firstPiece.locator('circle').nth(-2).click()
+  await firstPiece.locator('circle').nth(-1).click()
+  await expect(canvas.locator('g[data-piece-id]')).toHaveCount(2)
+
+  const generated = canvas.locator('g[data-piece-id]').last()
+  const label = await generated.locator('text').textContent()
+  expect(Number(label?.slice(1))).toBeCloseTo(50, 5)
+  expect(await generated.getAttribute('transform')).toContain('translate(100, 200)')
+})
+
+test('keeps multi-select rotation, deletion, archives, and recovery working', async ({ page }) => {
+  await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
+  const pieces = page.locator('g[data-piece-id]')
+
+  await page.keyboard.press('Control+a')
+  await expect(page.locator('g[data-piece-id] > rect[stroke="#ef4444"], g[data-piece-id] > path[stroke="#ef4444"]')).toHaveCount(3)
+  const transformsBefore = await pieces.evaluateAll((elements) => elements.map((element) => element.getAttribute('transform')))
+  await page.keyboard.press('Tab')
+  await expect.poll(async () => JSON.stringify(await pieces.evaluateAll(
+    (elements) => elements.map((element) => element.getAttribute('transform')),
+  ))).not.toBe(JSON.stringify(transformsBefore))
+
+  await page.keyboard.press('Control+s')
+  await page.getByPlaceholder('输入存档名称').fill('回归存档')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('trackArchives'))).toContain('回归存档')
+
+  await page.getByRole('button', { name: '清空', exact: true }).click()
+  await expect(pieces).toHaveCount(0)
+  await page.getByRole('combobox').selectOption('回归存档')
+  await expect(pieces).toHaveCount(3)
+
+  await page.keyboard.press('Control+a')
+  await page.keyboard.press('Delete')
+  await expect(pieces).toHaveCount(0)
+
+  await page.evaluate(() => {
+    const archive = JSON.parse(localStorage.getItem('archive_回归存档') || '{}')
+    localStorage.setItem('currentTrackProject', JSON.stringify({ ...archive, name: '恢复项目' }))
+  })
+  await page.reload()
+  await expect(pieces).toHaveCount(3)
+  await expect(page.getByText(/项目: 恢复项目/)).toBeVisible()
+})
+
+test('keeps minimap navigation responsive after viewport resize', async ({ page }) => {
+  await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
+  await page.setViewportSize({ width: 1180, height: 720 })
+
+  const canvas = page.locator('svg[width="100%"][height="100%"]')
+  const miniMap = page.locator('svg[width="300"][height="150"]')
+  await expect(miniMap).toBeVisible()
+  const canvasBox = await canvas.boundingBox()
+  expect(canvasBox).not.toBeNull()
+  await page.mouse.move(canvasBox!.x + canvasBox!.width / 2, canvasBox!.y + canvasBox!.height / 2)
+  await page.keyboard.down('Control')
+  await page.mouse.wheel(0, -300)
+  await page.keyboard.up('Control')
+  const initialViewBox = await canvas.getAttribute('viewBox')
+  const viewportRect = miniMap.locator('rect[stroke="#ef4444"]')
+  const viewportBox = await viewportRect.boundingBox()
+  expect(viewportBox).not.toBeNull()
+
+  await page.mouse.move(viewportBox!.x + viewportBox!.width / 2, viewportBox!.y + viewportBox!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(viewportBox!.x + viewportBox!.width / 2 + 30, viewportBox!.y + viewportBox!.height / 2 + 15)
+  await page.mouse.up()
+
+  await expect.poll(() => canvas.getAttribute('viewBox')).not.toBe(initialViewBox)
+})
+
+test('exports BOM JSON and releases repeated PNG export resources', async ({ page }, testInfo) => {
+  await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
+
+  await page.getByRole('button', { name: /查看BOM/ }).click()
+  const [bomDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: /导出JSON/ }).click(),
+  ])
+  const bomPath = testInfo.outputPath('track-info.json')
+  await bomDownload.saveAs(bomPath)
+  const bom = JSON.parse(await readFile(bomPath, 'utf8'))
+  expect(bom.totalPieces).toBe(3)
+  expect(bom.details).toHaveLength(3)
+  await page.getByRole('button', { name: /关闭/ }).click()
+
+  await page.evaluate(() => {
+    const audit = { created: [] as string[], revoked: [] as string[], canvases: [] as HTMLCanvasElement[] }
+    ;(window as typeof window & { __exportAudit?: typeof audit }).__exportAudit = audit
+
+    const createObjectURL = URL.createObjectURL.bind(URL)
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL)
+    URL.createObjectURL = (blob) => {
+      const url = createObjectURL(blob)
+      audit.created.push(url)
+      return url
+    }
+    URL.revokeObjectURL = (url) => {
+      audit.revoked.push(url)
+      revokeObjectURL(url)
+    }
+
+    const createElement = document.createElement.bind(document)
+    document.createElement = ((tagName: string, options?: { is?: string }) => {
+      const element = createElement(tagName, options)
+      if (tagName.toLowerCase() === 'canvas') audit.canvases.push(element as HTMLCanvasElement)
+      return element
+    }) as typeof document.createElement
+
+    const context = {
+      drawImage() {},
+      fillRect() {},
+      fillText() {},
+      imageSmoothingEnabled: true,
+      imageSmoothingQuality: 'high',
+      fillStyle: '',
+      font: '',
+    }
+    HTMLCanvasElement.prototype.getContext = (() => context) as unknown as typeof HTMLCanvasElement.prototype.getContext
+    HTMLCanvasElement.prototype.toBlob = function toBlob(callback) {
+      callback(new Blob(['png'], { type: 'image/png' }))
+    }
+  })
+
+  for (let index = 0; index < 2; index += 1) {
+    const [imageDownload] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /导出图片/ }).click(),
+    ])
+    expect(imageDownload.suggestedFilename()).toMatch(/\.png$/)
+  }
+
+  await expect.poll(() => page.evaluate(() => {
+    const audit = (window as typeof window & {
+      __exportAudit: { created: string[]; revoked: string[]; canvases: HTMLCanvasElement[] }
+    }).__exportAudit
+    return {
+      created: audit.created.length,
+      revoked: audit.revoked.length,
+      canvasSizes: audit.canvases.map((canvas) => [canvas.width, canvas.height]),
+    }
+  })).toEqual({ created: 4, revoked: 4, canvasSizes: [[0, 0], [0, 0]] })
 })
