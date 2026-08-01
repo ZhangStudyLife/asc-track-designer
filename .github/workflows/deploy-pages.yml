@@ -41,3 +41,22 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+
+  verify:
+    runs-on: ubuntu-latest
+    needs: deploy
+    strategy:
+      matrix:
+        site:
+          - https://zhangstudylife.github.io/asc-track-designer/
+          - https://asc-track-designer.vercel.app/
+    steps:
+      - name: Verify deployed app
+        shell: bash
+        run: |
+          html="$(curl --fail --location --retry 20 --retry-delay 5 --retry-all-errors '${{ matrix.site }}')"
+          grep -q '<div id="root"></div>' <<< "$html"
+          asset="$(grep -oE 'src="[^"]+\.js"' <<< "$html" | head -n 1 | cut -d '"' -f 2)"
+          test -n "$asset"
+          curl --fail --location --retry 20 --retry-delay 5 --retry-all-errors \
+            "${{ matrix.site }}${asset#./}" > /dev/null
