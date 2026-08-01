@@ -1258,7 +1258,9 @@ export default function PvcDesigner() {
         // 点击已选中的多选项：开始拖拽多选
         // 拖动开始时入栈一次快照
         pushPiecesHistory(currentPieces);
-        snapTargetsRef.current = []
+        snapTargetsRef.current = currentPieces.flatMap(candidate =>
+          activeSelectedIdsSet.has(candidate.id) ? [] : getConnectionPoints(candidate)
+        )
         dragAnchorIdRef.current = piece.id
         isDraggingRef.current = true
         setIsDragging(true)
@@ -1341,9 +1343,9 @@ export default function PvcDesigner() {
         // 确定要移动的赛道
         const currentPieces = piecesRef.current
         
-        if (idsToMove.length === 1) {
-          // 单个赛道：检查连接点吸附
-          const draggedPiece = currentPieces.find(p => p.id === idsToMove[0])
+        if (snapTargetsRef.current.length > 0) {
+          // 单个赛道或多选锚点：检查外部连接点吸附
+          const draggedPiece = currentPieces.find(p => p.id === dragAnchorIdRef.current)
           if (draggedPiece) {
             const snapPoint = findNearestConnectionPoint(draggedPiece, newX, newY)
             if (snapPoint) {

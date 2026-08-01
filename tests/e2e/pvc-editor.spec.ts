@@ -389,6 +389,51 @@ test('drags a multi-selection from the pressed piece without jumping', async ({ 
   })
 })
 
+test('snaps a multi-selection to an unselected track after moving it away', async ({ page }) => {
+  await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
+  const canvas = page.locator('svg[width="100%"][height="100%"]')
+  const firstPiece = canvas.locator('g[data-piece-id="1"]')
+  const anchorPiece = canvas.locator('g[data-piece-id="2"]')
+  const targetPiece = canvas.locator('g[data-piece-id="3"]')
+
+  await firstPiece.locator('rect').click({ modifiers: ['Control'], force: true })
+  await anchorPiece.locator('path').click({ modifiers: ['Control'], force: true })
+
+  const dragFromAnchor = async (deltaX: number, deltaY: number) => {
+    const box = await anchorPiece.locator('path').boundingBox()
+    expect(box).not.toBeNull()
+    const start = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 }
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(start.x + deltaX, start.y + deltaY, { steps: 4 })
+    await page.mouse.up()
+  }
+
+  await dragFromAnchor(140, 100)
+
+  const anchorEnd = await anchorPiece.locator('circle').last().boundingBox()
+  const targetStart = await targetPiece.locator('circle').first().boundingBox()
+  expect(anchorEnd).not.toBeNull()
+  expect(targetStart).not.toBeNull()
+  await dragFromAnchor(
+    targetStart!.x + targetStart!.width / 2 - (anchorEnd!.x + anchorEnd!.width / 2),
+    targetStart!.y + targetStart!.height / 2 - (anchorEnd!.y + anchorEnd!.height / 2),
+  )
+
+  const snappedAnchorEnd = await anchorPiece.locator('circle').last().boundingBox()
+  const snappedTargetStart = await targetPiece.locator('circle').first().boundingBox()
+  expect(snappedAnchorEnd).not.toBeNull()
+  expect(snappedTargetStart).not.toBeNull()
+  expect(snappedAnchorEnd!.x + snappedAnchorEnd!.width / 2).toBeCloseTo(
+    snappedTargetStart!.x + snappedTargetStart!.width / 2,
+    1,
+  )
+  expect(snappedAnchorEnd!.y + snappedAnchorEnd!.height / 2).toBeCloseTo(
+    snappedTargetStart!.y + snappedTargetStart!.height / 2,
+    1,
+  )
+})
+
 test('keeps multi-select rotation, deletion, archives, and recovery working', async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
   const pieces = page.locator('g[data-piece-id]')
