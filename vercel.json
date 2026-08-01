@@ -1,16 +1,8 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": ".next",
+  "outputDirectory": "dist",
   "installCommand": "npm install --legacy-peer-deps",
-  "framework": "nextjs",
-  "env": {
-    "NODE_ENV": "production"
-  },
-  "build": {
-    "env": {
-      "NEXT_TELEMETRY_DISABLED": "1"
-    }
-  },
+  "framework": "vite",
   "regions": ["iad1"],
   "cleanUrls": true,
   "trailingSlash": false
