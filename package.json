@@ -19,6 +19,9 @@
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win --x64",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run",
     "clean": "rimraf .next out release node_modules"
   },
   "build": {
@@ -102,6 +105,7 @@
     "react-dom": "^18.3.1",
     "react-konva": "^18.2.10",
     "typescript": "^5.6.3",
+    "vitest": "^3.2.4",
     "wait-on": "^8.0.1"
   }
 }

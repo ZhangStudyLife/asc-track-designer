@@ -1,0 +1,22 @@
+{
+  "version": "1.0",
+  "created": "2026-08-01T00:00:00.000Z",
+  "bounds": {
+    "width": 3200,
+    "height": 1600,
+    "x": -1600,
+    "y": -800
+  },
+  "pieces": [
+    {
+      "id": 1,
+      "type": "straight",
+      "x": 100,
+      "y": 200,
+      "rotation": 30,
+      "params": {
+        "length": 50
+      }
+    }
+  ]
+}

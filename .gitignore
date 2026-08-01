@@ -10,6 +10,7 @@ out/
 dist/
 release/
 build/
+*.tsbuildinfo
 
 # Environment
 .env*
