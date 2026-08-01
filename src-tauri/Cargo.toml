@@ -1,6 +1,6 @@
 [package]
 name = "asc-track-designer"
-version = "2.0.2"
+version = "2.0.3"
 description = "ASC track designer"
 authors = ["ASC Laboratory"]
 edition = "2021"
