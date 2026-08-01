@@ -1,5 +1,5 @@
-import Home from './page'
+import AppShell from './AppShell'
 
 export default function App() {
-  return <Home />
+  return <AppShell />
 }

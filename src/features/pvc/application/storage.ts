@@ -1,4 +1,4 @@
-import type { TrackPiece } from './types'
+import type { TrackPiece } from '../domain/types'
 
 export const TRACK_STORAGE_KEYS = {
   piecesHistory: 'piecesHistory',

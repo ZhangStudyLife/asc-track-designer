@@ -1,5 +1,5 @@
 import React from 'react'
-import type { TrackPiece } from '../../features/track/types'
+import type { TrackPiece } from '../../domain/types'
 
 type MiniMapProps = {
   pieces: TrackPiece[]

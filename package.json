@@ -18,7 +18,7 @@
     "start": "electron .",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win --x64",
-    "lint": "next lint",
+    "lint": "eslint src tests --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",

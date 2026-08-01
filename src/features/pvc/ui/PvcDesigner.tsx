@@ -1,7 +1,7 @@
 "use client"
 import React from 'react'
-import { MiniMap } from '../components/track/MiniMap'
-import { TrackCanvas } from '../components/track/TrackCanvas'
+import { MiniMap } from './components/MiniMap'
+import { TrackCanvas } from './components/TrackCanvas'
 import {
   findNearestConnectionPointInTargets,
   getConnectionPoint,
@@ -9,18 +9,18 @@ import {
   getDistance,
   getSnapTargets,
   SNAP_DISTANCE,
-} from '../features/track/geometry'
-import { parseTrackCode } from '../features/track/parser'
-import { calculateTrackStats as calculateStatsForPieces } from '../features/track/stats'
-import { flushPiecesHistory, pushPiecesHistory, readPiecesHistory, writePiecesHistory } from '../features/track/storage'
-import type { ConnectionPoint, ConnectionPointRef, TrackPiece } from '../features/track/types'
+} from '../domain/geometry'
+import { parseTrackCode } from '../domain/parser'
+import { calculateTrackStats as calculateStatsForPieces } from '../domain/stats'
+import { flushPiecesHistory, pushPiecesHistory, readPiecesHistory, writePiecesHistory } from '../application/storage'
+import type { ConnectionPoint, ConnectionPointRef, TrackPiece } from '../domain/types'
 
 const MIN_SCALE = 0.18
 const MAX_SCALE = 2.5
 const CANVAS_BOUNDS = { x: -2000, y: -1000, width: 4000, height: 2000 }
 const DESIGN_BOUNDS = { width: 3200, height: 1600, x: -1600, y: -800 }
 
-export default function Home() {
+export default function PvcDesigner() {
   // 拖动状态
   const [isDragging, setIsDragging] = React.useState(false)
   // 拖动状态
