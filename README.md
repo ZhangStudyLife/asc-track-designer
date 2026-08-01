@@ -24,7 +24,7 @@ npm run build
 npm run dist:win
 ```
 
-`npm run build` creates the static Vite site in `dist/`. `npm run dist:win` builds the optimized Tauri application and writes the single portable executable to `release/ASC.2.0.2.exe`. WebView2 remains a Windows system dependency. On first launch, the EXE writes its embedded 160 KB WebView2 loader to the user's application-data directory; no sibling DLL or Node.js server is required.
+`npm run build` creates the static Vite site in `dist/`. `npm run dist:win` builds the optimized Tauri application and writes the single portable executable to `release/ASC.<version>.exe`. WebView2 remains a Windows system dependency. On first launch, the EXE writes its embedded 160 KB WebView2 loader to the user's application-data directory; no sibling DLL or Node.js server is required.
 
 ## Quality Checks
 
