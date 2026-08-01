@@ -4,6 +4,7 @@ import { MiniMap } from './components/MiniMap'
 import { MeasurementOverlay } from './components/MeasurementOverlay'
 import { TrackCanvas } from './components/TrackCanvas'
 import { TrackPiecesLayer } from './components/TrackPiecesLayer'
+import { OnboardingTour, PVC_ONBOARDING_VERSION } from './components/OnboardingTour'
 import { easeViewBox, normalizeWheelDelta, zoomViewBox } from './viewport'
 import {
   findNearestConnectionPointInTargets,
@@ -209,6 +210,7 @@ export default function PvcDesigner() {
   const [hiddenFixedSizes, setHiddenFixedSizes] = React.useState<{straights: number[], curves: {radius: number, angle: number}[]}>({straights: [], curves: []})
   const [isClient, setIsClient] = React.useState(false)
   const [theme, setTheme] = React.useState<'light' | 'dark'>('light')
+  const [showOnboarding, setShowOnboarding] = React.useState(false)
   const [statusMessage, setStatusMessage] = React.useState('')
   const statusTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -355,6 +357,8 @@ export default function PvcDesigner() {
       if (savedTheme === 'light' || savedTheme === 'dark') {
         setTheme(savedTheme)
       }
+
+      setShowOnboarding(localStorage.getItem('pvcOnboardingVersion') !== PVC_ONBOARDING_VERSION)
       
       // 加载当前项目
       const currentProject = localStorage.getItem('currentTrackProject')
@@ -364,7 +368,7 @@ export default function PvcDesigner() {
         setCurrentArchiveName(projectData.name || '未命名项目')
       }
     } catch {
-      // 忽略localStorage错误
+      setShowOnboarding(true)
     }
   }, [setPieces])
 
@@ -928,6 +932,15 @@ export default function PvcDesigner() {
     const coords = point.matrixTransform(matrix.inverse())
     
     return { x: coords.x, y: coords.y }
+  }, [])
+
+  const closeOnboarding = React.useCallback(() => {
+    try {
+      localStorage.setItem('pvcOnboardingVersion', PVC_ONBOARDING_VERSION)
+    } catch {
+      // The tour can still close when browser storage is unavailable.
+    }
+    setShowOnboarding(false)
   }, [])
 
   const getMouseSVGCoords = (e: React.MouseEvent) => getClientSVGCoords(e.clientX, e.clientY)
@@ -1572,6 +1585,13 @@ export default function PvcDesigner() {
         title: '切换白天/夜间模式'
       }, theme === 'light' ? '夜间' : '白天'),
       React.createElement('button', {
+        key: 'onboarding-help',
+        'aria-label': '打开新手引导',
+        title: '打开新手引导',
+        style: { ...buttonBase, width: 34, padding: 0, fontSize: 17 },
+        onClick: () => setShowOnboarding(true),
+      }, '?'),
+      React.createElement('button', {
         key: 'autofill-btn',
         style: isAutoFill ? primaryButton : buttonBase,
         onClick: () => { setIsAutoFill(true); setAutoFillPoints([]); setIsMeasuring(false); setMeasurePoints([]); },
@@ -1615,6 +1635,7 @@ export default function PvcDesigner() {
 
       React.createElement('div', {
         key: 'controls',
+        'data-tour': 'track-palette',
         style: {
           display: 'flex',
           gap: '8px',
@@ -2059,6 +2080,7 @@ export default function PvcDesigner() {
 
         React.createElement('button', {
           key: 'custom',
+          'data-tour': 'custom-track',
           onClick: () => setShowCustomDialog(true),
           style: {
             padding: '8px 16px',
@@ -2171,6 +2193,7 @@ export default function PvcDesigner() {
 
         React.createElement('button', {
           key: 'load-button',
+          'data-tour': 'file-actions',
           onClick: openTrackFromJSON,
           style: {
             ...buttonBase,
@@ -2193,11 +2216,26 @@ export default function PvcDesigner() {
 
         React.createElement('button', {
           key: 'export-image',
+          'data-tour': 'file-actions',
           onClick: exportAsImage,
           style: {
             ...primaryButton
           }
         }, '🖼️ 导出图片'),
+
+        React.createElement('button', {
+          key: 'export-json',
+          'data-tour': 'file-actions',
+          'aria-label': '导出赛道JSON',
+          title: '导出赛道JSON',
+          onClick: exportTrackAsJSON,
+          style: {
+            ...buttonBase,
+            backgroundColor: isDark ? '#12304a' : '#e0f2fe',
+            color: isDark ? '#bae6fd' : '#0369a1',
+            borderColor: isDark ? '#1e4f76' : '#7dd3fc',
+          }
+        }, '导出JSON'),
 
         React.createElement('button', {
           key: 'view-bom',
@@ -2966,6 +3004,13 @@ export default function PvcDesigner() {
         }, 'Ctrl+S:存档 | Ctrl+O:导入 | Ctrl+E:导出 | Tab:旋转 | Del:删除 | 右键:拖拽')
       ]),
       
+      React.createElement(OnboardingTour, {
+        key: 'onboarding-tour',
+        open: showOnboarding,
+        isDark,
+        onClose: closeOnboarding,
+      }),
+
       // 角落快捷键提示卡片
       React.createElement('div', {
         key: 'shortcut-card',

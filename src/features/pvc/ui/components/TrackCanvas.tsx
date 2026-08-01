@@ -23,6 +23,7 @@ export function TrackCanvas({
 }: TrackCanvasProps) {
   return (
     <svg
+      data-tour="canvas"
       ref={svgRef}
       width="100%"
       height="100%"

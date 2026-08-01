@@ -7,8 +7,85 @@ const fixture = (name: string) => path.resolve(`tests/fixtures/pvc/${name}`)
 test.beforeEach(async ({ page }) => {
   page.on('dialog', (dialog) => dialog.accept())
   await page.goto('/')
+  await page.evaluate(() => {
+    localStorage.clear()
+    localStorage.setItem('pvcOnboardingVersion', '1')
+  })
+  await page.reload()
+})
+
+test('shows the first-run tour once and allows replay from help', async ({ page }) => {
   await page.evaluate(() => localStorage.clear())
   await page.reload()
+
+  const tour = page.getByRole('dialog', { name: '新手引导' })
+  await expect(tour).toBeVisible()
+  await expect(tour.getByRole('heading', { name: '放置赛道' })).toBeVisible()
+  await expect(page.locator('[data-tour-highlight="track-palette"]')).toBeVisible()
+  expect(await tour.locator('.tour-demo-track').evaluate((element) => element.getAnimations().length)).toBeGreaterThan(0)
+  const l50Box = await page.getByRole('button', { name: 'L50', exact: true }).boundingBox()
+  expect(l50Box).not.toBeNull()
+  await page.mouse.click(l50Box!.x + l50Box!.width / 2, l50Box!.y + l50Box!.height / 2)
+  await expect(page.locator('g[data-piece-id]')).toHaveCount(0)
+
+  const next = tour.getByRole('button', { name: '下一步' })
+  await next.click()
+  await expect(tour.getByRole('heading', { name: '自定义赛道尺寸' })).toBeVisible()
+  await expect(page.locator('[data-tour-highlight="custom-track"]')).toBeVisible()
+
+  await next.click()
+  await expect(tour.getByRole('heading', { name: '中键平移画布' })).toBeVisible()
+  await expect(page.locator('[data-tour-highlight="canvas"]')).toBeVisible()
+
+  await next.click()
+  await expect(tour.getByRole('heading', { name: '滚轮连续缩放' })).toBeVisible()
+
+  await next.click()
+  await expect(tour.getByRole('heading', { name: '导入与导出' })).toBeVisible()
+  await expect(page.locator('[data-tour="file-actions"]')).toHaveCount(3)
+  await tour.getByRole('button', { name: '完成' }).click()
+
+  await expect(tour).toBeHidden()
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('pvcOnboardingVersion'))).toBe('1')
+  await page.reload()
+  await expect(tour).toBeHidden()
+
+  const helpButton = page.getByRole('button', { name: '打开新手引导' })
+  await helpButton.click()
+  await expect(tour.getByRole('heading', { name: '放置赛道' })).toBeVisible()
+  await expect(tour.locator('.onboarding-card')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(tour).toBeHidden()
+  await expect(helpButton).toBeFocused()
+})
+
+test('keeps the onboarding card in a narrow viewport and honors reduced motion', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.evaluate(() => localStorage.clear())
+  await page.reload()
+
+  const card = page.locator('.onboarding-card')
+  await expect(card).toBeVisible()
+  const box = await card.boundingBox()
+  expect(box).not.toBeNull()
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.y).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390)
+  expect(box!.y + box!.height).toBeLessThanOrEqual(844)
+  await expect(page.locator('.tour-demo-track')).toHaveCSS('animation-name', 'none')
+})
+
+test('uses the saved dark theme for the onboarding tour', async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.clear()
+    localStorage.setItem('trackDesignerTheme', 'dark')
+  })
+  await page.reload()
+
+  const tour = page.locator('.onboarding-tour')
+  await expect(tour).toHaveClass(/is-dark/)
+  await expect(tour.locator('.onboarding-card')).toHaveCSS('background-color', 'rgb(15, 23, 42)')
 })
 
 test('loads the Vite editor and keeps add, drag, zoom, and box selection working', async ({ page }) => {
@@ -497,6 +574,15 @@ test('keeps minimap navigation responsive after viewport resize', async ({ page 
 
 test('exports BOM JSON and releases repeated PNG export resources', async ({ page }, testInfo) => {
   await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
+
+  const [trackDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: '导出赛道JSON' }).click(),
+  ])
+  const trackPath = testInfo.outputPath('track.json')
+  await trackDownload.saveAs(trackPath)
+  const track = JSON.parse(await readFile(trackPath, 'utf8'))
+  expect(track.pieces).toHaveLength(3)
 
   await page.getByRole('button', { name: /查看BOM/ }).click()
   const [bomDownload] = await Promise.all([
