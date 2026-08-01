@@ -4,7 +4,7 @@ import { MiniMap } from './components/MiniMap'
 import { MeasurementOverlay } from './components/MeasurementOverlay'
 import { TrackCanvas } from './components/TrackCanvas'
 import { TrackPiecesLayer } from './components/TrackPiecesLayer'
-import { normalizeWheelDelta, zoomViewBox } from './viewport'
+import { easeViewBox, normalizeWheelDelta, zoomViewBox } from './viewport'
 import {
   findNearestConnectionPointInTargets,
   getConnectionPoints as getTrackConnectionPoints,
@@ -26,6 +26,7 @@ import { openTextFile, saveBlobFile, saveTextFile } from '../../../shared/platfo
 import { isTauriRuntime } from '../../../shared/platform/runtime'
 
 const DESIGN_BOUNDS = { width: 3200, height: 1600, x: -1600, y: -800 }
+const ZOOM_ANIMATION_MS = 100
 
 export default function PvcDesigner() {
   const pieceCount = usePvcEditorStore((state) => state.pieceIds.length)
@@ -215,14 +216,21 @@ export default function PvcDesigner() {
   const [archives, setArchives] = React.useState<string[]>([])
   const [showArchiveDialog, setShowArchiveDialog] = React.useState(false)
   const [archiveName, setArchiveName] = React.useState('')
-  const [isCtrlDragging, setIsCtrlDragging] = React.useState(false)
-  const [ctrlDragStart, setCtrlDragStart] = React.useState({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = React.useState(false)
   const svgRef = React.useRef<SVGSVGElement>(null)
   const snapTargetsRef = React.useRef<ConnectionPoint[]>([])
   const pointerFrameRef = React.useRef<number | null>(null)
   const pendingPointerRef = React.useRef<{ clientX: number; clientY: number } | null>(null)
   const zoomFrameRef = React.useRef<number | null>(null)
   const pendingZoomRef = React.useRef<{ delta: number; clientX: number; clientY: number } | null>(null)
+  const zoomAnimationFrameRef = React.useRef<number | null>(null)
+  const zoomTargetRef = React.useRef<typeof viewBox | null>(null)
+  const zoomAnimationStartRef = React.useRef<{ time: number; viewBox: typeof viewBox } | null>(null)
+  const isPanningRef = React.useRef(false)
+  const panButtonRef = React.useRef<number | null>(null)
+  const panPreviousRef = React.useRef<{ clientX: number; clientY: number } | null>(null)
+  const pendingPanRef = React.useRef<{ clientX: number; clientY: number } | null>(null)
+  const panFrameRef = React.useRef<number | null>(null)
   const selectionBoxRef = React.useRef<{ x: number; y: number; width: number; height: number } | null>(null)
   const dragAnchorIdRef = React.useRef<number | null>(null)
   const piecesRef = React.useRef(getPvcPieces())
@@ -367,37 +375,6 @@ export default function PvcDesigner() {
     }
   }, [isClient, theme])
 
-
-  // Ctrl+左键拖拽画布功能
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0 && e.ctrlKey) { // Ctrl+左键
-      e.preventDefault()
-      setIsCtrlDragging(true)
-      setCtrlDragStart({ x: e.clientX, y: e.clientY })
-    }
-  }
-
-  const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (isCtrlDragging) {
-      e.preventDefault()
-      const deltaX = e.clientX - ctrlDragStart.x
-      const deltaY = e.clientY - ctrlDragStart.y
-      // 优化移动比例，提高拖拽灵敏度
-      const moveScale = viewBox.width / (svgRef.current?.clientWidth || 800) * 0.8
-      setViewBox(prev => ({
-        ...prev,
-        x: prev.x - deltaX * moveScale,
-        y: prev.y - deltaY * moveScale
-      }))
-      setCtrlDragStart({ x: e.clientX, y: e.clientY })
-    }
-  }
-
-  const handleCanvasMouseUp = (e: React.MouseEvent) => {
-    if (isCtrlDragging) {
-      setIsCtrlDragging(false)
-    }
-  }
 
   // 禁用右键菜单
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -955,8 +932,118 @@ export default function PvcDesigner() {
 
   const getMouseSVGCoords = (e: React.MouseEvent) => getClientSVGCoords(e.clientX, e.clientY)
 
+  const cancelZoomAnimation = React.useCallback(() => {
+    if (zoomFrameRef.current !== null) cancelAnimationFrame(zoomFrameRef.current)
+    if (zoomAnimationFrameRef.current !== null) cancelAnimationFrame(zoomAnimationFrameRef.current)
+    zoomFrameRef.current = null
+    zoomAnimationFrameRef.current = null
+    pendingZoomRef.current = null
+    zoomTargetRef.current = null
+    zoomAnimationStartRef.current = null
+  }, [])
+
+  const applyPanPosition = React.useCallback((clientX: number, clientY: number) => {
+    const previous = panPreviousRef.current
+    if (!previous) return
+
+    const previousCoords = getClientSVGCoords(previous.clientX, previous.clientY)
+    const currentCoords = getClientSVGCoords(clientX, clientY)
+    const currentViewBox = viewBoxRef.current
+    const nextViewBox = {
+      ...currentViewBox,
+      x: currentViewBox.x - (currentCoords.x - previousCoords.x),
+      y: currentViewBox.y - (currentCoords.y - previousCoords.y),
+    }
+
+    panPreviousRef.current = { clientX, clientY }
+    viewBoxRef.current = nextViewBox
+    setViewBox(nextViewBox)
+  }, [getClientSVGCoords])
+
+  const startCanvasPan = React.useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    const shouldPan = e.button === 1 || (e.button === 0 && e.ctrlKey)
+    if (!shouldPan) return
+
+    e.preventDefault()
+    cancelZoomAnimation()
+    isPanningRef.current = true
+    panButtonRef.current = e.button
+    panPreviousRef.current = { clientX: e.clientX, clientY: e.clientY }
+    pendingPanRef.current = null
+    setIsPanning(true)
+  }, [cancelZoomAnimation])
+
+  React.useEffect(() => {
+    const flushPan = (clientX: number, clientY: number) => {
+      if (panFrameRef.current !== null) cancelAnimationFrame(panFrameRef.current)
+      panFrameRef.current = null
+      pendingPanRef.current = null
+      applyPanPosition(clientX, clientY)
+    }
+
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      if (!isPanningRef.current) return
+
+      e.preventDefault()
+      pendingPanRef.current = { clientX: e.clientX, clientY: e.clientY }
+      if (panFrameRef.current !== null) return
+
+      panFrameRef.current = requestAnimationFrame(() => {
+        panFrameRef.current = null
+        const pending = pendingPanRef.current
+        pendingPanRef.current = null
+        if (pending) applyPanPosition(pending.clientX, pending.clientY)
+      })
+    }
+
+    const handleWindowMouseUp = (e: MouseEvent) => {
+      if (!isPanningRef.current || e.button !== panButtonRef.current) return
+
+      e.preventDefault()
+      flushPan(e.clientX, e.clientY)
+      isPanningRef.current = false
+      panButtonRef.current = null
+      panPreviousRef.current = null
+      setIsPanning(false)
+    }
+
+    window.addEventListener('mousemove', handleWindowMouseMove, { passive: false })
+    window.addEventListener('mouseup', handleWindowMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove)
+      window.removeEventListener('mouseup', handleWindowMouseUp)
+      if (panFrameRef.current !== null) cancelAnimationFrame(panFrameRef.current)
+      panFrameRef.current = null
+      pendingPanRef.current = null
+      panPreviousRef.current = null
+      panButtonRef.current = null
+      isPanningRef.current = false
+    }
+  }, [applyPanPosition])
+
   // 滚轮缩放
   React.useEffect(() => {
+    const animateZoom = (time: number) => {
+      zoomAnimationFrameRef.current = null
+      const animation = zoomAnimationStartRef.current
+      const target = zoomTargetRef.current
+      if (!animation || !target) return
+
+      const progress = Math.min(1, (time - animation.time) / ZOOM_ANIMATION_MS)
+      const nextViewBox = progress === 1
+        ? target
+        : easeViewBox(animation.viewBox, target, progress)
+      viewBoxRef.current = nextViewBox
+      setViewBox(nextViewBox)
+
+      if (progress < 1) {
+        zoomAnimationFrameRef.current = requestAnimationFrame(animateZoom)
+      } else {
+        zoomTargetRef.current = null
+        zoomAnimationStartRef.current = null
+      }
+    }
+
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault()
       const svg = svgRef.current
@@ -977,7 +1064,24 @@ export default function PvcDesigner() {
           if (!zoom) return
 
           const anchor = getClientSVGCoords(zoom.clientX, zoom.clientY)
-          setViewBox(currentViewBox => zoomViewBox(currentViewBox, anchor, zoom.delta))
+          const displayedViewBox = viewBoxRef.current
+          const ratioX = (anchor.x - displayedViewBox.x) / displayedViewBox.width
+          const ratioY = (anchor.y - displayedViewBox.y) / displayedViewBox.height
+          const baseViewBox = zoomTargetRef.current || displayedViewBox
+          const targetAnchor = {
+            x: baseViewBox.x + ratioX * baseViewBox.width,
+            y: baseViewBox.y + ratioY * baseViewBox.height,
+          }
+
+          zoomTargetRef.current = zoomViewBox(baseViewBox, targetAnchor, zoom.delta)
+          zoomAnimationStartRef.current = {
+            time: performance.now(),
+            viewBox: displayedViewBox,
+          }
+          if (zoomAnimationFrameRef.current !== null) {
+            cancelAnimationFrame(zoomAnimationFrameRef.current)
+          }
+          zoomAnimationFrameRef.current = requestAnimationFrame(animateZoom)
         })
       }
     }
@@ -987,12 +1091,10 @@ export default function PvcDesigner() {
       svg.addEventListener('wheel', handleWheel, { passive: false })
       return () => {
         svg.removeEventListener('wheel', handleWheel)
-        if (zoomFrameRef.current !== null) cancelAnimationFrame(zoomFrameRef.current)
-        zoomFrameRef.current = null
-        pendingZoomRef.current = null
+        cancelZoomAnimation()
       }
     }
-  }, [getClientSVGCoords])
+  }, [cancelZoomAnimation, getClientSVGCoords])
 
   // 键盘控制：Tab键旋转，Delete键删除，ESC取消旋转，Ctrl+A全选，快捷键操作
   const saveAsArchiveRef = React.useRef(saveAsArchive)
@@ -1131,7 +1233,9 @@ export default function PvcDesigner() {
 
   // 鼠标事件处理 - 支持多选和框选
   const handleMouseDown = (e: React.MouseEvent, piece?: any) => {
+    cancelZoomAnimation()
     if (piece) {
+      if (e.button !== 0) return
       e.stopPropagation()
       const activeSelectedIds = selectedIdsRef.current
       const activeSelectedIdsSet = new Set(activeSelectedIds)
@@ -1181,7 +1285,7 @@ export default function PvcDesigner() {
       }
     } else {
       // 空白区域点击：开始框选
-      if (e.button !== 0) return
+      if (e.button !== 0 || e.ctrlKey) return
 
       const coords = getMouseSVGCoords(e)
       
@@ -2145,18 +2249,14 @@ export default function PvcDesigner() {
         key: 'svg',
         svgRef,
         viewBox,
-        cursor: isDragging ? 'grabbing' : (isCtrlDragging ? 'move' : 'default'),
+        cursor: isPanning || isDragging ? 'grabbing' : 'default',
         onMouseDown: (e) => {
           handleMouseDown(e)
-          handleCanvasMouseDown(e)
+          startCanvasPan(e)
         },
-        onMouseMove: (e) => {
-          handleMouseMove(e)
-          handleCanvasMouseMove(e)
-        },
-        onMouseUp: (e) => {
-          handleMouseUp()
-          handleCanvasMouseUp(e)
+        onMouseMove: handleMouseMove,
+        onMouseUp: () => {
+          if (!isPanningRef.current) handleMouseUp()
         },
         onContextMenu: handleContextMenu
       }, [

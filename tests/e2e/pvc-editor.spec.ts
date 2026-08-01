@@ -48,6 +48,7 @@ test('loads the Vite editor and keeps add, drag, zoom, and box selection working
   await page.mouse.wheel(0, 300)
   await page.keyboard.up('Control')
   await expect.poll(() => canvas.getAttribute('viewBox')).not.toBe(initialViewBox)
+  await page.waitForTimeout(150)
 
   const start = {
     x: canvasBox!.x + canvasBox!.width - 220,
@@ -94,23 +95,129 @@ test('zooms continuously around the pointer without Ctrl', async ({ page }) => {
     return { x: transformed.x, y: transformed.y }
   }, pointer)
 
+  await canvas.evaluate((element) => {
+    const values: string[] = []
+    const observer = new MutationObserver(() => {
+      const value = element.getAttribute('viewBox')
+      if (value) values.push(value)
+    })
+    observer.observe(element, { attributes: true, attributeFilter: ['viewBox'] })
+    ;(window as typeof window & {
+      __zoomAudit?: { values: string[]; observer: MutationObserver }
+    }).__zoomAudit = { values, observer }
+  })
+
   await page.mouse.move(pointer.x, pointer.y)
   const initialViewBox = await readViewBox()
   const initialPointerCoordinate = await readPointerCoordinate()
   await page.mouse.wheel(0, -10)
   await expect.poll(async () => (await readViewBox()).width).toBeLessThan(initialViewBox.width)
+  await page.waitForTimeout(150)
   const smallZoomViewBox = await readViewBox()
   const pointerCoordinateAfterZoom = await readPointerCoordinate()
   expect(pointerCoordinateAfterZoom.x).toBeCloseTo(initialPointerCoordinate.x, 1)
   expect(pointerCoordinateAfterZoom.y).toBeCloseTo(initialPointerCoordinate.y, 1)
 
+  const zoomFrames = await page.evaluate(() => {
+    const audit = (window as typeof window & {
+      __zoomAudit: { values: string[]; observer: MutationObserver }
+    }).__zoomAudit
+    audit.observer.disconnect()
+    return audit.values
+  })
+  expect(new Set(zoomFrames).size).toBeGreaterThan(2)
+  const settledViewBox = await canvas.getAttribute('viewBox')
+  await page.waitForTimeout(80)
+  expect(await canvas.getAttribute('viewBox')).toBe(settledViewBox)
+
   await page.mouse.wheel(0, 10)
+  await page.waitForTimeout(150)
   await expect.poll(async () => (await readViewBox()).width).toBeCloseTo(initialViewBox.width, 3)
   await page.mouse.wheel(0, -100)
-  await expect.poll(async () => (await readViewBox()).width).toBeLessThan(smallZoomViewBox.width)
+  await page.waitForTimeout(150)
   const largeZoomViewBox = await readViewBox()
+  expect(largeZoomViewBox.width).toBeLessThan(smallZoomViewBox.width)
   expect(initialViewBox.width - largeZoomViewBox.width)
     .toBeGreaterThan((initialViewBox.width - smallZoomViewBox.width) * 5)
+})
+
+test('pans with the middle button over a piece and continues outside the canvas', async ({ page }) => {
+  await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
+  const canvas = page.locator('svg[width="100%"][height="100%"]')
+  const piece = canvas.locator('g[data-piece-id="1"]')
+  const pieceSurface = piece.locator('rect')
+  const labelBox = await piece.locator('text').boundingBox()
+  const canvasBox = await canvas.boundingBox()
+  expect(labelBox).not.toBeNull()
+  expect(canvasBox).not.toBeNull()
+
+  const readViewBox = async () => {
+    const values = (await canvas.getAttribute('viewBox'))!.split(' ').map(Number)
+    return { x: values[0], y: values[1], width: values[2], height: values[3] }
+  }
+  const start = {
+    x: labelBox!.x + labelBox!.width / 2,
+    y: labelBox!.y + labelBox!.height / 2,
+  }
+  const end = { x: start.x + 60, y: start.y + 40 }
+  const expectedDelta = await canvas.evaluate((element, points) => {
+    const svg = element as SVGSVGElement
+    const toSvg = (point: { x: number; y: number }) => {
+      const svgPoint = svg.createSVGPoint()
+      svgPoint.x = point.x
+      svgPoint.y = point.y
+      return svgPoint.matrixTransform(svg.getScreenCTM()!.inverse())
+    }
+    const from = toSvg(points.start)
+    const to = toSvg(points.end)
+    return { x: to.x - from.x, y: to.y - from.y }
+  }, { start, end })
+  const initialViewBox = await readViewBox()
+  const initialTransform = await piece.getAttribute('transform')
+
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down({ button: 'middle' })
+  await page.mouse.move(end.x, end.y, { steps: 4 })
+  await expect.poll(async () => (await readViewBox()).x).toBeCloseTo(initialViewBox.x - expectedDelta.x, 3)
+  const afterInsideMove = await readViewBox()
+  expect(afterInsideMove.y).toBeCloseTo(initialViewBox.y - expectedDelta.y, 3)
+  expect(await piece.getAttribute('transform')).toBe(initialTransform)
+  await expect(pieceSurface).not.toHaveAttribute('stroke', '#ef4444')
+
+  const outside = {
+    x: canvasBox!.x + canvasBox!.width / 2,
+    y: canvasBox!.y - 10,
+  }
+  await page.mouse.move(outside.x, outside.y, { steps: 4 })
+  await expect.poll(() => canvas.getAttribute('viewBox')).not.toBe(
+    `${afterInsideMove.x} ${afterInsideMove.y} ${afterInsideMove.width} ${afterInsideMove.height}`,
+  )
+  await page.mouse.up({ button: 'middle' })
+  const releasedViewBox = await canvas.getAttribute('viewBox')
+  await page.mouse.move(outside.x + 80, Math.max(2, outside.y - 8))
+  await page.waitForTimeout(50)
+  expect(await canvas.getAttribute('viewBox')).toBe(releasedViewBox)
+  expect(await piece.getAttribute('transform')).toBe(initialTransform)
+})
+
+test('keeps Ctrl plus left-button blank-canvas panning compatible', async ({ page }) => {
+  const canvas = page.locator('svg[width="100%"][height="100%"]')
+  const canvasBox = await canvas.boundingBox()
+  expect(canvasBox).not.toBeNull()
+  const initialViewBox = await canvas.getAttribute('viewBox')
+  const start = {
+    x: canvasBox!.x + canvasBox!.width * 0.45,
+    y: canvasBox!.y + canvasBox!.height * 0.55,
+  }
+
+  await page.mouse.move(start.x, start.y)
+  await page.keyboard.down('Control')
+  await page.mouse.down()
+  await page.mouse.move(start.x - 50, start.y + 35, { steps: 4 })
+  await expect(canvas.locator('rect[stroke="#3b82f6"]')).toHaveCount(0)
+  await page.mouse.up()
+  await page.keyboard.up('Control')
+  await expect.poll(() => canvas.getAttribute('viewBox')).not.toBe(initialViewBox)
 })
 
 test('selects curve labels and box-selects by the visible track center', async ({ page }) => {

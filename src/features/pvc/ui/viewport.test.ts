@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeWheelDelta, zoomViewBox } from './viewport'
+import { easeViewBox, normalizeWheelDelta, zoomViewBox } from './viewport'
 
 const initial = { x: -1600, y: -800, width: 3200, height: 1600 }
 
@@ -34,5 +34,15 @@ describe('canvas viewport zoom', () => {
     }
     expect(zoomedIn.width).toBeCloseTo(400)
     expect(zoomedOut.width).toBeCloseTo(1000 / 0.18)
+  })
+
+  it('eases toward the target and finishes exactly', () => {
+    const target = { x: -1000, y: -500, width: 2000, height: 1000 }
+    const halfway = easeViewBox(initial, target, 0.5)
+
+    expect(halfway.width).toBeGreaterThan(target.width)
+    expect(halfway.width).toBeLessThan(initial.width)
+    expect(halfway.width).toBeCloseTo(2150)
+    expect(easeViewBox(initial, target, 1)).toEqual(target)
   })
 })
