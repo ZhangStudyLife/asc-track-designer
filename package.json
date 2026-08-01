@@ -93,5 +93,8 @@
     "vite": "^6.1.0",
     "vitest": "^3.2.4",
     "wait-on": "^8.0.1"
+  },
+  "dependencies": {
+    "zustand": "^5.0.8"
   }
 }

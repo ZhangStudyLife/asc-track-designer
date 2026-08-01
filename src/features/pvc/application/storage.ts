@@ -1,4 +1,10 @@
 import type { TrackPiece } from '../domain/types'
+import {
+  hydrateHistoryCommands,
+  recordHistoryCommand,
+  redoHistoryCommand,
+  undoHistoryCommand,
+} from './history'
 
 export const TRACK_STORAGE_KEYS = {
   piecesHistory: 'piecesHistory',
@@ -24,6 +30,8 @@ function getHistoryCache() {
   } catch {
     historyCache = []
   }
+
+  hydrateHistoryCommands(historyCache)
 
   return historyCache
 }
@@ -54,6 +62,7 @@ function schedulePiecesHistoryWrite() {
 export function pushPiecesHistory(pieces: TrackPiece[]) {
   const history = getHistoryCache()
   if (!history.length || JSON.stringify(history[history.length - 1]) !== JSON.stringify(pieces)) {
+    if (history.length) recordHistoryCommand(history[history.length - 1], pieces)
     historyCache = [...history, pieces].slice(-HISTORY_LIMIT)
     schedulePiecesHistoryWrite()
   }
@@ -65,7 +74,28 @@ export function readPiecesHistory(): TrackPiece[][] {
 
 export function writePiecesHistory(history: TrackPiece[][]) {
   historyCache = [...history].slice(-HISTORY_LIMIT)
+  hydrateHistoryCommands(historyCache)
   schedulePiecesHistoryWrite()
+}
+
+export function undoPiecesHistory(current: TrackPiece[]) {
+  const history = getHistoryCache()
+  const previous = undoHistoryCommand(current)
+  if (!previous) return null
+
+  historyCache = history.slice(0, -1)
+  schedulePiecesHistoryWrite()
+  return previous
+}
+
+export function redoPiecesHistory(current: TrackPiece[]) {
+  getHistoryCache()
+  const next = redoHistoryCommand(current)
+  if (!next) return null
+
+  historyCache = [...(historyCache || []), next].slice(-HISTORY_LIMIT)
+  schedulePiecesHistoryWrite()
+  return next
 }
 
 export function flushPiecesHistory() {

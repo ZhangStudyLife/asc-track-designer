@@ -30,6 +30,12 @@ test('loads the Vite editor and keeps add, drag, zoom, and box selection working
   await page.mouse.move(dragStart.x + 80, dragStart.y + 40)
   await page.mouse.up()
   await expect.poll(() => piece.getAttribute('transform')).not.toBe(initialTransform)
+  const movedTransform = await piece.getAttribute('transform')
+
+  await page.keyboard.press('Control+z')
+  await expect.poll(() => piece.getAttribute('transform')).toBe(initialTransform)
+  await page.keyboard.press('Control+y')
+  await expect.poll(() => piece.getAttribute('transform')).toBe(movedTransform)
 
   const initialViewBox = await canvas.getAttribute('viewBox')
   const canvasBox = await canvas.boundingBox()
@@ -74,4 +80,61 @@ test('imports the legacy JSON format and persists the selected theme', async ({ 
   await expect(page.getByRole('button', { name: '白天', exact: true })).toBeVisible()
   await page.reload()
   await expect(page.getByRole('button', { name: '白天', exact: true })).toBeVisible()
+})
+
+test('keeps a 200-piece drag responsive and isolated to the moved piece', async ({ page }) => {
+  await page.locator('input[type="file"]').setInputFiles(
+    path.resolve('tests/fixtures/pvc/200-pieces.json'),
+  )
+  await expect(page.getByText(/元件数: 200/)).toBeVisible()
+
+  const canvas = page.locator('svg[width="100%"][height="100%"]')
+  const pieces = canvas.locator('g[data-piece-id]')
+  await expect(pieces).toHaveCount(200)
+
+  const movedPiece = canvas.locator('g[data-piece-id="1"]')
+  const unchangedPiece = canvas.locator('g[data-piece-id="2"]')
+  const movedBefore = await movedPiece.getAttribute('transform')
+  const unchangedBefore = await unchangedPiece.getAttribute('transform')
+  const dragSurfaceBox = await movedPiece.locator('rect').boundingBox()
+  expect(dragSurfaceBox).not.toBeNull()
+
+  await page.evaluate(() => {
+    const samples: number[] = []
+    let previous = performance.now()
+    let active = true
+    const sample = (now: number) => {
+      samples.push(now - previous)
+      previous = now
+      if (active) requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+    ;(window as typeof window & { __stopFrameSample?: () => number[] }).__stopFrameSample = () => {
+      active = false
+      return samples
+    }
+  })
+
+  const start = {
+    x: dragSurfaceBox!.x + dragSurfaceBox!.width * 0.25,
+    y: dragSurfaceBox!.y + dragSurfaceBox!.height * 0.25,
+  }
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  for (let step = 1; step <= 40; step += 1) {
+    await page.mouse.move(start.x + step * 2, start.y + step)
+    await page.waitForTimeout(8)
+  }
+  await page.mouse.up()
+  await page.waitForTimeout(100)
+
+  const frameSamples = await page.evaluate(() => (
+    (window as typeof window & { __stopFrameSample: () => number[] }).__stopFrameSample()
+  ))
+  const sortedSamples = frameSamples.slice(2).sort((left, right) => left - right)
+  const p95 = sortedSamples[Math.floor(sortedSamples.length * 0.95)]
+
+  expect(await movedPiece.getAttribute('transform')).not.toBe(movedBefore)
+  expect(await unchangedPiece.getAttribute('transform')).toBe(unchangedBefore)
+  expect(p95).toBeLessThan(35)
 })

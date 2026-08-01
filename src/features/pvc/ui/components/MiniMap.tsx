@@ -1,8 +1,8 @@
 import React from 'react'
-import type { TrackPiece } from '../../domain/types'
+import { useShallow } from 'zustand/react/shallow'
+import { selectPvcPieces, usePvcEditorStore } from '../../application/editorStore'
 
 type MiniMapProps = {
-  pieces: TrackPiece[]
   viewBox: { x: number; y: number; width: number; height: number }
   dragging: boolean
   onMouseDown?: (e: React.MouseEvent<SVGSVGElement>) => void
@@ -28,7 +28,8 @@ export const MINI_MAP_METRICS = {
   scaleY,
 }
 
-export function MiniMap({ pieces, viewBox, dragging, onMouseDown, onMouseMove, onMouseUp }: MiniMapProps) {
+export function MiniMap({ viewBox, dragging, onMouseDown, onMouseMove, onMouseUp }: MiniMapProps) {
+  const pieces = usePvcEditorStore(useShallow(selectPvcPieces))
   const rectX = (viewBox.x - designX) * scaleX
   const rectY = (viewBox.y - designY) * scaleY
   const rectW = viewBox.width * scaleX

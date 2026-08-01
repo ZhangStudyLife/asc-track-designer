@@ -1,18 +1,24 @@
 "use client"
 import React from 'react'
 import { MiniMap } from './components/MiniMap'
+import { MeasurementOverlay } from './components/MeasurementOverlay'
 import { TrackCanvas } from './components/TrackCanvas'
+import { TrackPiecesLayer } from './components/TrackPiecesLayer'
 import {
   findNearestConnectionPointInTargets,
-  getConnectionPoint,
   getConnectionPoints as getTrackConnectionPoints,
-  getDistance,
   getSnapTargets,
   SNAP_DISTANCE,
 } from '../domain/geometry'
 import { parseTrackCode } from '../domain/parser'
 import { calculateTrackStats as calculateStatsForPieces } from '../domain/stats'
-import { flushPiecesHistory, pushPiecesHistory, readPiecesHistory, writePiecesHistory } from '../application/storage'
+import { getPvcPieces, usePvcEditorStore } from '../application/editorStore'
+import {
+  flushPiecesHistory,
+  pushPiecesHistory,
+  redoPiecesHistory,
+  undoPiecesHistory,
+} from '../application/storage'
 import type { ConnectionPoint, ConnectionPointRef, TrackPiece } from '../domain/types'
 
 const MIN_SCALE = 0.18
@@ -21,6 +27,8 @@ const CANVAS_BOUNDS = { x: -2000, y: -1000, width: 4000, height: 2000 }
 const DESIGN_BOUNDS = { width: 3200, height: 1600, x: -1600, y: -800 }
 
 export default function PvcDesigner() {
+  const pieceCount = usePvcEditorStore((state) => state.pieceIds.length)
+  const setPieces = usePvcEditorStore((state) => state.setPieces)
   // 拖动状态
   const [isDragging, setIsDragging] = React.useState(false)
   // 拖动状态
@@ -60,7 +68,7 @@ export default function PvcDesigner() {
       setTimeout(() => {
         // 获取两个点的最新坐标
         const getPointCoord = (mp: { pieceId: number, type: 'start' | 'end' }) => {
-          const piece = pieces.find(p => p.id === mp.pieceId)
+          const piece = piecesRef.current.find(p => p.id === mp.pieceId)
           if (!piece) return { x: 0, y: 0 }
           if (piece.type === 'straight') {
             const length = piece.params.length * 2
@@ -172,8 +180,6 @@ export default function PvcDesigner() {
   const handleMiniMouseUp = () => {
     setDraggingMini(false);
   };
-  const [pieces, setPieces] = React.useState<TrackPiece[]>([])
-
   // 每次 pieces 变化时自动记录历史快照（拖动时不入栈）
   const [viewBox, setViewBox] = React.useState({ 
     x: -2000, // 扩大视图范围，确保16M×8M区域完全可见
@@ -203,6 +209,7 @@ export default function PvcDesigner() {
   const [theme, setTheme] = React.useState<'light' | 'dark'>('light')
   const [statusMessage, setStatusMessage] = React.useState('')
   const statusTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const [currentArchiveName, setCurrentArchiveName] = React.useState('未命名项目')
   const [archives, setArchives] = React.useState<string[]>([])
   const [showArchiveDialog, setShowArchiveDialog] = React.useState(false)
@@ -214,20 +221,23 @@ export default function PvcDesigner() {
   const pointerFrameRef = React.useRef<number | null>(null)
   const pendingPointerRef = React.useRef<{ clientX: number; clientY: number } | null>(null)
   const selectionBoxRef = React.useRef<{ x: number; y: number; width: number; height: number } | null>(null)
-  const piecesRef = React.useRef(pieces)
+  const piecesRef = React.useRef(getPvcPieces())
   const selectedIdRef = React.useRef(selectedId)
   const selectedIdsRef = React.useRef(selectedIds)
   const isDraggingRef = React.useRef(isDragging)
   const isSelectingRef = React.useRef(isSelecting)
   const selectionStartRef = React.useRef(selectionStart)
   const dragOffsetRef = React.useRef(dragOffset)
-  piecesRef.current = pieces
+  const isClientRef = React.useRef(isClient)
+  const currentArchiveNameRef = React.useRef(currentArchiveName)
   selectedIdRef.current = selectedId
   selectedIdsRef.current = selectedIds
   isDraggingRef.current = isDragging
   isSelectingRef.current = isSelecting
   selectionStartRef.current = selectionStart
   dragOffsetRef.current = dragOffset
+  isClientRef.current = isClient
+  currentArchiveNameRef.current = currentArchiveName
 
   const showStatusMessage = React.useCallback((message: string, duration = 2000) => {
     setStatusMessage(message)
@@ -238,6 +248,36 @@ export default function PvcDesigner() {
     }, duration)
   }, [])
 
+  const scheduleAutoSave = React.useCallback(() => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+    if (!isClientRef.current || getPvcPieces().length === 0) return
+
+    autoSaveTimerRef.current = setTimeout(() => {
+      const projectData = {
+        name: currentArchiveNameRef.current,
+        pieces: getPvcPieces(),
+        viewBox: viewBoxRef.current,
+        timestamp: new Date().toISOString(),
+      }
+      localStorage.setItem('currentTrackProject', JSON.stringify(projectData))
+      showStatusMessage('鑷姩淇濆瓨瀹屾垚')
+      autoSaveTimerRef.current = null
+    }, 5000)
+  }, [showStatusMessage])
+
+  React.useEffect(() => usePvcEditorStore.subscribe(
+    (state) => state.revision,
+    () => {
+      piecesRef.current = getPvcPieces()
+      scheduleAutoSave()
+    },
+    { fireImmediately: true },
+  ), [scheduleAutoSave])
+
+  React.useEffect(() => {
+    scheduleAutoSave()
+  }, [isClient, viewBox, currentArchiveName, scheduleAutoSave])
+
   React.useEffect(() => {
     const flushHistory = () => flushPiecesHistory()
     window.addEventListener('pagehide', flushHistory)
@@ -245,6 +285,7 @@ export default function PvcDesigner() {
     return () => {
       window.removeEventListener('pagehide', flushHistory)
       if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
       if (pointerFrameRef.current !== null) cancelAnimationFrame(pointerFrameRef.current)
       flushPiecesHistory()
     }
@@ -253,25 +294,29 @@ export default function PvcDesigner() {
   // 撤销功能：Ctrl+Z
   React.useEffect(() => {
     const handleUndoKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
-        e.preventDefault();
-        // 撤销逻辑：回退pieces到上一个状态
-        setPieces(prev => {
-          const history = readPiecesHistory();
-          if (history.length > 1) {
-            history.pop();
-            writePiecesHistory(history);
-            showStatusMessage('撤销成功', 1000);
-            return history[history.length - 1];
-          }
-          showStatusMessage('没有可撤销的操作', 1000);
-          return prev;
-        });
+      if (!e.ctrlKey && !e.metaKey) return
+
+      const key = e.key.toLowerCase()
+      const isRedo = key === 'y' || (key === 'z' && e.shiftKey)
+      const isUndo = key === 'z' && !e.shiftKey
+      if (!isUndo && !isRedo) return
+
+      e.preventDefault()
+      const currentPieces = getPvcPieces()
+      const nextPieces = isRedo
+        ? redoPiecesHistory(currentPieces)
+        : undoPiecesHistory(currentPieces)
+
+      if (nextPieces) {
+        setPieces(nextPieces)
+        showStatusMessage(isRedo ? '????' : '????', 1000)
+      } else {
+        showStatusMessage(isRedo ? '????????' : '????????', 1000)
       }
-    };
-    window.addEventListener('keydown', handleUndoKey);
-    return () => window.removeEventListener('keydown', handleUndoKey);
-  }, [showStatusMessage]);
+    }
+    window.addEventListener('keydown', handleUndoKey)
+    return () => window.removeEventListener('keydown', handleUndoKey)
+  }, [setPieces, showStatusMessage])
   
   // 客户端水合后加载localStorage数据
   React.useEffect(() => {
@@ -309,7 +354,7 @@ export default function PvcDesigner() {
     } catch {
       // 忽略localStorage错误
     }
-  }, [])
+  }, [setPieces])
 
   // 自动保存功能
   React.useEffect(() => {
@@ -318,23 +363,6 @@ export default function PvcDesigner() {
     }
   }, [isClient, theme])
 
-  React.useEffect(() => {
-    if (isClient && pieces.length > 0) {
-      const autoSave = () => {
-        const projectData = {
-          name: currentArchiveName,
-          pieces,
-          viewBox,
-          timestamp: new Date().toISOString()
-        }
-        localStorage.setItem('currentTrackProject', JSON.stringify(projectData))
-        showStatusMessage('自动保存完成')
-      }
-      
-      const timer = setTimeout(autoSave, 5000) // 5秒后自动保存
-      return () => clearTimeout(timer)
-    }
-  }, [pieces, viewBox, currentArchiveName, isClient, showStatusMessage])
 
   // Ctrl+左键拖拽画布功能
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
@@ -374,7 +402,7 @@ export default function PvcDesigner() {
 
   // 存档管理
   const saveAsArchive = () => {
-    if (pieces.length === 0) {
+    if (piecesRef.current.length === 0) {
       alert('没有赛道可保存')
       return
     }
@@ -389,7 +417,7 @@ export default function PvcDesigner() {
     
     const archiveData = {
       name: archiveName,
-      pieces,
+      pieces: piecesRef.current,
       viewBox,
       timestamp: new Date().toISOString()
     }
@@ -426,7 +454,7 @@ export default function PvcDesigner() {
   }
 
   const newProject = () => {
-    if (pieces.length > 0) {
+    if (piecesRef.current.length > 0) {
       if (!confirm('当前项目尚未保存，确定要新建项目吗？')) {
         return
       }
@@ -499,7 +527,7 @@ export default function PvcDesigner() {
 
   // 保存赛道为JSON文件
   const exportTrackAsJSON = () => {
-    if (pieces.length === 0) {
+    if (piecesRef.current.length === 0) {
       alert('没有赛道可导出')
       return
     }
@@ -508,7 +536,7 @@ export default function PvcDesigner() {
       version: '1.0',
       created: new Date().toISOString(),
       bounds: DESIGN_BOUNDS,
-      pieces: pieces
+      pieces: piecesRef.current
     }
     const blob = new Blob([JSON.stringify(trackData, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -736,7 +764,7 @@ export default function PvcDesigner() {
   }
 
   // BOM统计和赛道长度计算
-  const calculateTrackStats = () => calculateStatsForPieces(pieces)
+  const calculateTrackStats = () => calculateStatsForPieces(piecesRef.current)
 
   // 显示BOM对话框状态
   const [showBomDialog, setShowBomDialog] = React.useState(false)
@@ -745,8 +773,9 @@ export default function PvcDesigner() {
   // 导出赛道尺寸信息
   const exportTrackInfo = () => {
     const stats = calculateTrackStats()
+    const currentPieces = piecesRef.current
     
-    const trackInfo = pieces.map(piece => {
+    const trackInfo = currentPieces.map(piece => {
       if (piece.type === 'straight') {
         return `L${piece.params.length}`
       } else if (piece.type === 'curve') {
@@ -756,11 +785,11 @@ export default function PvcDesigner() {
     }).filter(Boolean)
     
     const info = {
-      totalPieces: pieces.length,
+      totalPieces: currentPieces.length,
       totalLength: `${stats.totalLength}米`,
       pieces: trackInfo,
       bom: stats.bom,
-      details: pieces.map(p => ({
+      details: currentPieces.map(p => ({
         type: p.type,
         params: p.params,
         position: { x: p.x, y: p.y },
@@ -1039,7 +1068,7 @@ export default function PvcDesigner() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  }, [setPieces])
 
   // 框选检测
   const isInSelectionBox = (piece: any, box: {x: number, y: number, width: number, height: number}) => {
@@ -1450,7 +1479,6 @@ export default function PvcDesigner() {
       }
     }, 
       React.createElement(MiniMap, {
-        pieces,
         viewBox,
         dragging: draggingMini,
         onMouseDown: handleMiniMouseDown,
@@ -2087,7 +2115,7 @@ export default function PvcDesigner() {
         borderBottom: `1px solid ${ui.border}`,
         display: 'none'
       }
-    }, `元件: ${pieces.length} | 选中: ${selectedIds.length > 0 ? `多选(${selectedIds.length})` : selectedId ? `ID-${selectedId}` : '无'} | Ctrl+滚轮缩放 | 右键拖拽视图 | 框选多选 | Tab旋转15° | 双击输入角度`),
+    }, `元件: ${pieceCount} | 选中: ${selectedIds.length > 0 ? `多选(${selectedIds.length})` : selectedId ? `ID-${selectedId}` : '无'} | Ctrl+滚轮缩放 | 右键拖拽视图 | 框选多选 | Tab旋转15° | 双击输入角度`),
 
     // 画布区域 - 使用viewBox实现真正的视图缩放
     React.createElement('div', {
@@ -2192,197 +2220,22 @@ export default function PvcDesigner() {
         }, '🏁 ASC赛道区域: 16M × 8M'),
 
         // 渲染赛道元件 - 支持多选高亮
-        ...pieces.map(piece => {
-          const isSelected = piece.id === selectedId || selectedIdsSet.has(piece.id)
-          if (piece.type === 'straight') {
-            const length = piece.params.length * 2
-            const width = 45 * 2
-            // 直线段的两个吸附点
-            const startPoint = { x: piece.x, y: piece.y }
-            const endPoint = { x: piece.x + length * Math.cos((piece.rotation || 0) * Math.PI / 180), y: piece.y + length * Math.sin((piece.rotation || 0) * Math.PI / 180) }
-            return React.createElement('g', {
-              key: piece.id,
-              transform: `translate(${piece.x}, ${piece.y}) rotate(${piece.rotation || 0})`
-            }, [
-              React.createElement('rect', {
-                key: 'rect',
-                x: 0,
-                y: -width/2,
-                width: length,
-                height: width,
-                fill: isDark ? '#e5e7eb' : '#111827',
-                stroke: isSelected ? '#ef4444' : (isDark ? '#94a3b8' : '#64748b'),
-                strokeWidth: isSelected ? 3 : 1,
-                style: { cursor: 'move' },
-                onMouseDown: (e) => handleMouseDown(e, piece),
-                onDoubleClick: () => handleDoubleClick(piece)
-              }),
-              React.createElement('text', {
-                key: 'text',
-                x: length/2,
-                y: 5,
-                textAnchor: 'middle',
-                fontSize: '16px',
-                fill: isDark ? '#0f172a' : '#facc15',
-                fontWeight: 'bold',
-                style: { userSelect: 'none' }
-              }, `L${piece.params.length}`),
-              // 连接点（吸附点）
-              React.createElement('circle', {
-                key: 'start',
-                cx: 0,
-                cy: 0,
-                r: 4,
-                fill: '#10b981',
-                stroke: '#065f46',
-                strokeWidth: 1,
-                style: { cursor: (isMeasuring || isAutoFill) ? 'crosshair' : 'not-allowed', opacity: (isMeasuring || isAutoFill) ? 1 : 0.5 },
-                onClick: (isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'start' }) } : (isAutoFill ? (e) => { e.stopPropagation(); handleAutoFillPointClick({ pieceId: piece.id, type: 'start' }) } : undefined))
-              }),
-              React.createElement('circle', {
-                key: 'end',
-                cx: length,
-                cy: 0,
-                r: 4,
-                fill: '#dc2626',
-                stroke: '#7f1d1d',
-                strokeWidth: 1,
-                style: { cursor: (isMeasuring || isAutoFill) ? 'crosshair' : 'not-allowed', opacity: (isMeasuring || isAutoFill) ? 1 : 0.5 },
-                onClick: (isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'end' }) } : (isAutoFill ? (e) => { e.stopPropagation(); handleAutoFillPointClick({ pieceId: piece.id, type: 'end' }) } : undefined))
-              })
-            ])
-          } else if (piece.type === 'curve') {
-            const centerRadius = piece.params.radius * 2
-            const trackWidth = 45 * 2
-            const angleRad = (piece.params.angle * Math.PI) / 180
-            // 中心线上的连接点
-            const centerX1 = centerRadius
-            const centerY1 = 0
-            const centerX2 = centerRadius * Math.cos(angleRad)
-            const centerY2 = centerRadius * Math.sin(angleRad)
-            // 绝对坐标
-            const startPoint = { x: piece.x + centerX1 * Math.cos((piece.rotation || 0) * Math.PI / 180) - centerY1 * Math.sin((piece.rotation || 0) * Math.PI / 180), y: piece.y + centerX1 * Math.sin((piece.rotation || 0) * Math.PI / 180) + centerY1 * Math.cos((piece.rotation || 0) * Math.PI / 180) }
-            const endPoint = { x: piece.x + centerX2 * Math.cos((piece.rotation || 0) * Math.PI / 180) - centerY2 * Math.sin((piece.rotation || 0) * Math.PI / 180), y: piece.y + centerX2 * Math.sin((piece.rotation || 0) * Math.PI / 180) + centerY2 * Math.cos((piece.rotation || 0) * Math.PI / 180) }
-            const largeArcFlag = piece.params.angle > 180 ? 1 : 0
-            return React.createElement('g', {
-              key: piece.id,
-              transform: `translate(${piece.x}, ${piece.y}) rotate(${piece.rotation || 0})`
-            }, [
-              React.createElement('path', {
-                key: 'path',
-                d: (() => {
-                  const innerRadius = centerRadius - trackWidth / 2
-                  const outerRadius = centerRadius + trackWidth / 2
-                  const x1 = innerRadius
-                  const y1 = 0
-                  const x2 = outerRadius
-                  const y2 = 0
-                  const x3 = outerRadius * Math.cos(angleRad)
-                  const y3 = outerRadius * Math.sin(angleRad)
-                  const x4 = innerRadius * Math.cos(angleRad)
-                  const y4 = innerRadius * Math.sin(angleRad)
-                  return `M ${x1} ${y1} L ${x2} ${y2} A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 1 ${x3} ${y3} L ${x4} ${y4} A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${x1} ${y1}`
-                })(),
-                fill: isDark ? '#e5e7eb' : '#111827',
-                stroke: isSelected ? '#ef4444' : (isDark ? '#94a3b8' : '#64748b'),
-                strokeWidth: isSelected ? 3 : 1,
-                style: { cursor: 'move' },
-                onMouseDown: (e) => handleMouseDown(e, piece),
-                onDoubleClick: () => handleDoubleClick(piece)
-              }),
-              React.createElement('circle', {
-                key: 'center',
-                cx: 0,
-                cy: 0,
-                r: 3,
-                fill: '#00ff00',
-                stroke: '#000',
-                strokeWidth: 1
-              }),
-              React.createElement('text', {
-                key: 'text',
-                x: centerRadius * Math.cos(angleRad/2),
-                y: centerRadius * Math.sin(angleRad/2),
-                textAnchor: 'middle',
-                fontSize: '16px',
-                fill: isDark ? '#0f172a' : '#facc15',
-                fontWeight: 'bold',
-                style: { userSelect: 'none' }
-              }, `R${piece.params.radius}-${piece.params.angle}`),
-              // 连接点（吸附点）
-              React.createElement('circle', {
-                key: 'start',
-                cx: centerX1,
-                cy: centerY1,
-                r: 4,
-                fill: '#10b981',
-                stroke: '#065f46',
-                strokeWidth: 1,
-                style: { cursor: (isMeasuring || isAutoFill) ? 'crosshair' : 'not-allowed', opacity: (isMeasuring || isAutoFill) ? 1 : 0.5 },
-                onClick: (isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'start' }) } : (isAutoFill ? (e) => { e.stopPropagation(); handleAutoFillPointClick({ pieceId: piece.id, type: 'start' }) } : undefined))
-              }),
-              React.createElement('circle', {
-                key: 'end',
-                cx: centerX2,
-                cy: centerY2,
-                r: 4,
-                fill: '#dc2626',
-                stroke: '#7f1d1d',
-                strokeWidth: 1,
-                style: { cursor: (isMeasuring || isAutoFill) ? 'crosshair' : 'not-allowed', opacity: (isMeasuring || isAutoFill) ? 1 : 0.5 },
-                onClick: (isMeasuring ? (e) => { e.stopPropagation(); handleMeasurePointClick({ pieceId: piece.id, type: 'end' }) } : (isAutoFill ? (e) => { e.stopPropagation(); handleAutoFillPointClick({ pieceId: piece.id, type: 'end' }) } : undefined))
-              })
-            ])
-          }
-          return null
+        React.createElement(TrackPiecesLayer, {
+          key: 'track-pieces',
+          selectedId,
+          selectedIds: selectedIdsSet,
+          isDark,
+          isMeasuring,
+          isAutoFill,
+          onMouseDown: handleMouseDown,
+          onDoubleClick: handleDoubleClick,
+          onMeasurePointClick: handleMeasurePointClick,
+          onAutoFillPointClick: handleAutoFillPointClick,
         }),
-
-        // 测量结果渲染（即使测量模式关闭，只要有两个点就显示）
-  (measurePoints.length === 2) && (() => {
-          const pt1 = getConnectionPoint(pieces, measurePoints[0])
-          const pt2 = getConnectionPoint(pieces, measurePoints[1])
-          return React.createElement(React.Fragment, { key: 'measure-result' }, [
-            React.createElement('line', {
-              key: 'measure-line',
-              x1: pt1.x,
-              y1: pt1.y,
-              x2: pt2.x,
-              y2: pt2.y,
-              stroke: '#f59e42',
-              strokeWidth: 3,
-              strokeDasharray: '6,3'
-            }),
-            React.createElement('circle', {
-              key: 'measure-point-1',
-              cx: pt1.x,
-              cy: pt1.y,
-              r: 7,
-              fill: 'none',
-              stroke: '#f59e42',
-              strokeWidth: 2
-            }),
-            React.createElement('circle', {
-              key: 'measure-point-2',
-              cx: pt2.x,
-              cy: pt2.y,
-              r: 7,
-              fill: 'none',
-              stroke: '#f59e42',
-              strokeWidth: 2
-            }),
-            React.createElement('text', {
-              key: 'measure-text',
-              x: (pt1.x + pt2.x) / 2,
-              y: (pt1.y + pt2.y) / 2 - 10,
-              textAnchor: 'middle',
-              fontSize: '20px',
-              fill: '#f59e42',
-              fontWeight: 'bold',
-              style: { userSelect: 'none', textShadow: '1px 1px 2px #fff' }
-            }, `${(getDistance(pt1, pt2) / 2).toFixed(1)} mm`)
-          ])
-        })(),
-      // 测量按钮（可放在画布左上角）
+        React.createElement(MeasurementOverlay, {
+          key: 'measurement-overlay',
+          points: measurePoints,
+        }),
       React.createElement('button', {
         key: 'measure-btn',
         style: {
@@ -2419,7 +2272,7 @@ export default function PvcDesigner() {
         }) : null
       ].filter(Boolean)),
 
-      pieces.length < 0 ? React.createElement('div', {
+      pieceCount < 0 ? React.createElement('div', {
         key: 'welcome',
         style: {
           position: 'absolute',
@@ -2968,7 +2821,7 @@ export default function PvcDesigner() {
           style: { display: 'flex', alignItems: 'center', gap: '20px' }
         }, [
           React.createElement('span', { key: 'project-info' }, 
-            `项目: ${currentArchiveName} | 元件数: ${pieces.length}`
+            `项目: ${currentArchiveName} | 元件数: ${pieceCount}`
           ),
           React.createElement('span', { 
             key: 'motto',
