@@ -1,50 +1,84 @@
 import React from 'react'
 import { usePvcEditorStore } from '../../application/editorStore'
-import { getConnectionPoint, getDistance } from '../../domain/geometry'
-import type { ConnectionPointRef } from '../../domain/types'
+import { getMeasurementDistances, resolveMeasurementPoint } from '../../domain/geometry'
+import type { MeasurementPointRef } from '../../domain/types'
 
 type MeasurementOverlayProps = {
-  points: ConnectionPointRef[]
+  points: MeasurementPointRef[]
+}
+
+function formatDelta(value: number) {
+  const formatted = value.toFixed(1)
+  return value > 0 ? `+${formatted}` : formatted
+}
+
+function getReferencedPieceId(point?: MeasurementPointRef) {
+  return point && point.kind !== 'canvas' ? point.pieceId : null
 }
 
 export function MeasurementOverlay({ points }: MeasurementOverlayProps) {
+  const firstPieceId = getReferencedPieceId(points[0])
+  const secondPieceId = getReferencedPieceId(points[1])
   const firstPiece = usePvcEditorStore((state) => (
-    points[0] ? state.piecesById[points[0].pieceId] : undefined
+    firstPieceId === null ? undefined : state.piecesById[firstPieceId]
   ))
   const secondPiece = usePvcEditorStore((state) => (
-    points[1] ? state.piecesById[points[1].pieceId] : undefined
+    secondPieceId === null ? undefined : state.piecesById[secondPieceId]
   ))
+  const pieces = [firstPiece, secondPiece].filter((piece) => piece !== undefined)
+  const first = points[0] ? resolveMeasurementPoint(pieces, points[0]) : null
+  const second = points[1] ? resolveMeasurementPoint(pieces, points[1]) : null
 
-  if (points.length !== 2) return null
+  if (!first) return null
 
-  const pieces = [firstPiece, secondPiece].filter(Boolean)
-  const pt1 = getConnectionPoint(pieces, points[0])
-  const pt2 = getConnectionPoint(pieces, points[1])
+  if (!second) {
+    return (
+      <circle
+        data-measure-result="start"
+        cx={first.x}
+        cy={first.y}
+        r={7}
+        fill="none"
+        stroke="#f59e42"
+        strokeWidth={2}
+        pointerEvents="none"
+      />
+    )
+  }
+
+  const distances = getMeasurementDistances(first, second)
+  const labelX = (first.x + second.x) / 2
+  const labelY = (first.y + second.y) / 2 - 24
 
   return (
-    <>
+    <g data-measure-result="complete" pointerEvents="none">
       <line
-        x1={pt1.x}
-        y1={pt1.y}
-        x2={pt2.x}
-        y2={pt2.y}
+        x1={first.x}
+        y1={first.y}
+        x2={second.x}
+        y2={second.y}
         stroke="#f59e42"
         strokeWidth={3}
         strokeDasharray="6,3"
       />
-      <circle cx={pt1.x} cy={pt1.y} r={7} fill="none" stroke="#f59e42" strokeWidth={2} />
-      <circle cx={pt2.x} cy={pt2.y} r={7} fill="none" stroke="#f59e42" strokeWidth={2} />
+      <circle cx={first.x} cy={first.y} r={7} fill="none" stroke="#f59e42" strokeWidth={2} />
+      <circle cx={second.x} cy={second.y} r={7} fill="none" stroke="#f59e42" strokeWidth={2} />
       <text
-        x={(pt1.x + pt2.x) / 2}
-        y={(pt1.y + pt2.y) / 2 - 10}
+        x={labelX}
+        y={labelY}
         textAnchor="middle"
-        fontSize="20px"
+        fontSize="18px"
         fill="#f59e42"
         fontWeight="bold"
-        style={{ userSelect: 'none', textShadow: '1px 1px 2px #fff' }}
+        paintOrder="stroke"
+        stroke="#ffffff"
+        strokeWidth={4}
+        strokeLinejoin="round"
+        style={{ userSelect: 'none' }}
       >
-        {`${(getDistance(pt1, pt2) / 2).toFixed(1)} mm`}
+        <tspan x={labelX}>{`总长 ${distances.total.toFixed(1)} mm`}</tspan>
+        <tspan x={labelX} dy="22">{`ΔX ${formatDelta(distances.deltaX)} mm · ΔY ${formatDelta(distances.deltaY)} mm`}</tspan>
       </text>
-    </>
+    </g>
   )
 }

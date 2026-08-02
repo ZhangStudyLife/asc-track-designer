@@ -1,6 +1,15 @@
-import type { ConnectionPoint, ConnectionPointRef, SnapResult, TrackPiece, TrackPoint } from './types'
+import type {
+  ConnectionPoint,
+  ConnectionPointRef,
+  MeasurementPointRef,
+  SnapResult,
+  StraightCornerKind,
+  TrackPiece,
+  TrackPoint,
+} from './types'
 
 export const TRACK_RENDER_SCALE = 2
+export const TRACK_WIDTH = 45
 export const SNAP_DISTANCE = 30
 
 export function getDistance(a: TrackPoint, b: TrackPoint) {
@@ -72,6 +81,51 @@ export function getConnectionPoint(pieces: TrackPiece[], ref: ConnectionPointRef
   const piece = pieces.find((item) => item.id === ref.pieceId)
   if (!piece) return { x: 0, y: 0 }
   return getConnectionPoints(piece).find((point) => point.type === ref.type) || { x: 0, y: 0 }
+}
+
+export function getStraightCornerPoints(piece: TrackPiece): Array<TrackPoint & { corner: StraightCornerKind }> {
+  if (piece.type !== 'straight') return []
+
+  const length = piece.params.length * TRACK_RENDER_SCALE
+  const rad = (piece.rotation || 0) * Math.PI / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const localPoints: Array<TrackPoint & { corner: StraightCornerKind }> = [
+    { x: 0, y: -TRACK_WIDTH, corner: 'start-top' },
+    { x: 0, y: TRACK_WIDTH, corner: 'start-bottom' },
+    { x: length, y: -TRACK_WIDTH, corner: 'end-top' },
+    { x: length, y: TRACK_WIDTH, corner: 'end-bottom' },
+  ]
+
+  return localPoints.map((point) => ({
+    corner: point.corner,
+    x: piece.x + point.x * cos - point.y * sin,
+    y: piece.y + point.x * sin + point.y * cos,
+  }))
+}
+
+export function resolveMeasurementPoint(pieces: TrackPiece[], ref: MeasurementPointRef): TrackPoint | null {
+  if (ref.kind === 'canvas') return { x: ref.x, y: ref.y }
+
+  const piece = pieces.find((item) => item.id === ref.pieceId)
+  if (!piece) return null
+
+  if (ref.kind === 'connection') {
+    return getConnectionPoints(piece).find((point) => point.type === ref.type) || null
+  }
+
+  if (piece.type !== 'straight') return null
+  return getStraightCornerPoints(piece).find((point) => point.corner === ref.corner) || null
+}
+
+export function getMeasurementDistances(a: TrackPoint, b: TrackPoint) {
+  const deltaX = (b.x - a.x) / TRACK_RENDER_SCALE
+  const deltaY = (b.y - a.y) / TRACK_RENDER_SCALE
+  return {
+    total: Math.sqrt(deltaX ** 2 + deltaY ** 2),
+    deltaX,
+    deltaY,
+  }
 }
 
 export function getSnapTargets(pieces: TrackPiece[], excludedPieceId: number): ConnectionPoint[] {

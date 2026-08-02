@@ -12,6 +12,13 @@ export type ConnectionPointRef = {
   type: ConnectionPointKind
 }
 
+export type StraightCornerKind = 'start-top' | 'start-bottom' | 'end-top' | 'end-bottom'
+
+export type MeasurementPointRef =
+  | { kind: 'connection'; pieceId: number; type: ConnectionPointKind }
+  | { kind: 'straight-corner'; pieceId: number; corner: StraightCornerKind }
+  | { kind: 'canvas'; x: number; y: number }
+
 export type StraightTrackPiece = {
   id: number
   type: 'straight'

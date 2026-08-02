@@ -1,16 +1,19 @@
 import React from 'react'
 import { usePvcEditorStore } from '../../application/editorStore'
-import type { ConnectionPointRef, TrackPiece } from '../../domain/types'
+import { TRACK_RENDER_SCALE, TRACK_WIDTH } from '../../domain/geometry'
+import type { ConnectionPointRef, MeasurementPointRef, StraightCornerKind, TrackPiece } from '../../domain/types'
 
 type TrackPiecesLayerProps = {
   selectedId: number | null
   selectedIds: ReadonlySet<number>
   isDark: boolean
+  trackColor: string
+  dimensionLabelColor: string
   isMeasuring: boolean
   isAutoFill: boolean
   onMouseDown: (event: React.MouseEvent, piece: TrackPiece) => void
   onDoubleClick: (piece: TrackPiece) => void
-  onMeasurePointClick: (point: ConnectionPointRef) => void
+  onMeasurePointClick: (point: MeasurementPointRef) => void
   onAutoFillPointClick: (point: ConnectionPointRef) => void
 }
 
@@ -23,6 +26,8 @@ function TrackPieceView({
   pieceId,
   isSelected,
   isDark,
+  trackColor,
+  dimensionLabelColor,
   isMeasuring,
   isAutoFill,
   onMouseDown,
@@ -42,10 +47,13 @@ function TrackPieceView({
       cursor: (isMeasuring || isAutoFill) ? 'crosshair' : 'not-allowed',
       opacity: (isMeasuring || isAutoFill) ? 1 : 0.5,
     },
+    onMouseDown: (event: React.MouseEvent) => {
+      if (isMeasuring || isAutoFill) event.stopPropagation()
+    },
     onClick: isMeasuring
       ? (event: React.MouseEvent) => {
           event.stopPropagation()
-          onMeasurePointClick({ pieceId: piece.id, type })
+          onMeasurePointClick({ kind: 'connection', pieceId: piece.id, type })
         }
       : isAutoFill
         ? (event: React.MouseEvent) => {
@@ -55,9 +63,24 @@ function TrackPieceView({
         : undefined,
   })
 
+  const measurementCornerProps = (corner: StraightCornerKind) => ({
+    'data-measure-kind': 'straight-corner',
+    'data-corner': corner,
+    r: 5,
+    fill: '#38bdf8',
+    stroke: '#075985',
+    strokeWidth: 1.5,
+    style: { cursor: 'crosshair' },
+    onMouseDown: (event: React.MouseEvent) => event.stopPropagation(),
+    onClick: (event: React.MouseEvent) => {
+      event.stopPropagation()
+      onMeasurePointClick({ kind: 'straight-corner', pieceId: piece.id, corner })
+    },
+  })
+
   if (piece.type === 'straight') {
-    const length = piece.params.length * 2
-    const width = 45 * 2
+    const length = piece.params.length * TRACK_RENDER_SCALE
+    const width = TRACK_WIDTH * TRACK_RENDER_SCALE
 
     return (
       <g data-piece-id={piece.id} transform={`translate(${piece.x}, ${piece.y}) rotate(${piece.rotation || 0})`}>
@@ -66,10 +89,10 @@ function TrackPieceView({
           y={-width / 2}
           width={length}
           height={width}
-          fill={isDark ? '#e5e7eb' : '#111827'}
+          fill={trackColor}
           stroke={isSelected ? '#ef4444' : (isDark ? '#94a3b8' : '#64748b')}
           strokeWidth={isSelected ? 3 : 1}
-          style={{ cursor: 'move' }}
+          style={{ cursor: isMeasuring ? 'crosshair' : 'move' }}
           onMouseDown={(event) => onMouseDown(event, piece)}
           onDoubleClick={() => onDoubleClick(piece)}
         />
@@ -78,21 +101,27 @@ function TrackPieceView({
           y={5}
           textAnchor="middle"
           fontSize="16px"
-          fill={isDark ? '#0f172a' : '#facc15'}
+          fill={dimensionLabelColor}
           fontWeight="bold"
           style={{ userSelect: 'none', pointerEvents: 'none' }}
         >
           {`L${piece.params.length}`}
         </text>
-        <circle cx={0} cy={0} r={4} {...connectionPointProps('start')} />
-        <circle cx={length} cy={0} r={4} {...connectionPointProps('end')} />
+        <circle data-connection-type="start" data-measure-kind={isMeasuring ? 'connection' : undefined} cx={0} cy={0} r={4} {...connectionPointProps('start')} />
+        <circle data-connection-type="end" data-measure-kind={isMeasuring ? 'connection' : undefined} cx={length} cy={0} r={4} {...connectionPointProps('end')} />
+        {isMeasuring ? <>
+          <circle cx={0} cy={-width / 2} {...measurementCornerProps('start-top')} />
+          <circle cx={0} cy={width / 2} {...measurementCornerProps('start-bottom')} />
+          <circle cx={length} cy={-width / 2} {...measurementCornerProps('end-top')} />
+          <circle cx={length} cy={width / 2} {...measurementCornerProps('end-bottom')} />
+        </> : null}
       </g>
     )
   }
 
   if (piece.type === 'curve') {
-    const centerRadius = piece.params.radius * 2
-    const trackWidth = 45 * 2
+    const centerRadius = piece.params.radius * TRACK_RENDER_SCALE
+    const trackWidth = TRACK_WIDTH * TRACK_RENDER_SCALE
     const angleRad = (piece.params.angle * Math.PI) / 180
     const centerX1 = centerRadius
     const centerY1 = 0
@@ -113,10 +142,10 @@ function TrackPieceView({
       <g data-piece-id={piece.id} transform={`translate(${piece.x}, ${piece.y}) rotate(${piece.rotation || 0})`}>
         <path
           d={path}
-          fill={isDark ? '#e5e7eb' : '#111827'}
+          fill={trackColor}
           stroke={isSelected ? '#ef4444' : (isDark ? '#94a3b8' : '#64748b')}
           strokeWidth={isSelected ? 3 : 1}
-          style={{ cursor: 'move' }}
+          style={{ cursor: isMeasuring ? 'crosshair' : 'move' }}
           onMouseDown={(event) => onMouseDown(event, piece)}
           onDoubleClick={() => onDoubleClick(piece)}
         />
@@ -126,14 +155,14 @@ function TrackPieceView({
           y={centerRadius * Math.sin(angleRad / 2)}
           textAnchor="middle"
           fontSize="16px"
-          fill={isDark ? '#0f172a' : '#facc15'}
+          fill={dimensionLabelColor}
           fontWeight="bold"
           style={{ userSelect: 'none', pointerEvents: 'none' }}
         >
           {`R${piece.params.radius}-${piece.params.angle}`}
         </text>
-        <circle cx={centerX1} cy={centerY1} r={4} {...connectionPointProps('start')} />
-        <circle cx={centerX2} cy={centerY2} r={4} {...connectionPointProps('end')} />
+        <circle data-connection-type="start" data-measure-kind={isMeasuring ? 'connection' : undefined} cx={centerX1} cy={centerY1} r={4} {...connectionPointProps('start')} />
+        <circle data-connection-type="end" data-measure-kind={isMeasuring ? 'connection' : undefined} cx={centerX2} cy={centerY2} r={4} {...connectionPointProps('end')} />
       </g>
     )
   }

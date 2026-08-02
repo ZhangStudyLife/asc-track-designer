@@ -345,6 +345,77 @@ test('imports the legacy JSON format and persists the selected theme', async ({ 
   await expect(page.getByRole('button', { name: '白天', exact: true })).toBeVisible()
 })
 
+test('persists custom rotation shortcuts, step angle, and canvas colors', async ({ page }) => {
+  await page.locator('input[type="file"]').setInputFiles(fixture('single-piece.json'))
+  const canvas = page.locator('svg[width="100%"][height="100%"]')
+  const piece = canvas.locator('g[data-piece-id="1"]')
+  const pieceSurface = piece.locator('rect')
+  await pieceSurface.click()
+
+  await page.getByRole('button', { name: '打开编辑器设置' }).click()
+  const dialog = page.getByRole('dialog', { name: '编辑器设置' })
+  await expect(dialog).toBeVisible()
+
+  const leftShortcut = dialog.getByRole('button', { name: '设置左旋快捷键' })
+  const rightShortcut = dialog.getByRole('button', { name: '设置右旋快捷键' })
+  const rotationStep = dialog.getByLabel('旋转步长')
+  await leftShortcut.click()
+  await rotationStep.fill('30')
+  await expect(leftShortcut).toHaveText('Tab')
+  await leftShortcut.click()
+  await page.keyboard.press('q')
+  await expect(leftShortcut).toHaveText('Q')
+  await rightShortcut.click()
+  await page.keyboard.press('e')
+  await expect(rightShortcut).toHaveText('E')
+
+  await dialog.getByLabel('赛道颜色').fill('#123456')
+  await dialog.getByLabel('画布颜色').fill('#abcdef')
+  await dialog.getByLabel('网格颜色').fill('#654321')
+  await dialog.getByLabel('尺寸标注颜色').fill('#fedcba')
+  await dialog.getByRole('button', { name: '保存设置' }).click()
+  await expect(dialog).toBeHidden()
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('pvcEditorSettings'))).toContain('KeyQ')
+
+  await expect(pieceSurface).toHaveAttribute('fill', '#123456')
+  await expect(piece.locator('text')).toHaveAttribute('fill', '#fedcba')
+  await expect(canvas.locator('pattern#grid path')).toHaveAttribute('stroke', '#654321')
+  expect(await canvas.evaluate((element) => getComputedStyle(element.parentElement!).backgroundColor)).toBe('rgb(171, 205, 239)')
+
+  await pieceSurface.click()
+  await page.keyboard.press('KeyQ')
+  await expect(piece).toHaveAttribute('transform', /rotate\(0\)/)
+  await page.keyboard.press('KeyE')
+  await expect(piece).toHaveAttribute('transform', /rotate\(30\)/)
+
+  await page.reload()
+  await page.getByRole('button', { name: '打开编辑器设置' }).click()
+  const restoredDialog = page.getByRole('dialog', { name: '编辑器设置' })
+  await expect(restoredDialog.getByRole('button', { name: '设置左旋快捷键' })).toHaveText('Q')
+  await expect(restoredDialog.getByRole('button', { name: '设置右旋快捷键' })).toHaveText('E')
+  await expect(restoredDialog.getByLabel('旋转步长')).toHaveValue('30')
+  await expect(restoredDialog.getByLabel('赛道颜色')).toHaveValue('#123456')
+  await restoredDialog.getByRole('button', { name: '取消设置' }).click()
+
+  await page.getByRole('button', { name: '夜间', exact: true }).click()
+  if (await canvas.locator('g[data-piece-id]').count() === 0) {
+    await page.getByRole('button', { name: 'L50', exact: true }).click()
+  }
+  await page.getByRole('button', { name: '打开编辑器设置' }).click()
+  const darkDialog = page.getByRole('dialog', { name: '编辑器设置' })
+  await darkDialog.getByLabel('赛道颜色').fill('#ddeeff')
+  await darkDialog.getByLabel('画布颜色').fill('#010203')
+  await darkDialog.getByLabel('网格颜色').fill('#112233')
+  await darkDialog.getByLabel('尺寸标注颜色').fill('#445566')
+  await darkDialog.getByRole('button', { name: '保存设置' }).click()
+
+  const darkPiece = canvas.locator('g[data-piece-id]').first()
+  await expect(darkPiece.locator('rect')).toHaveAttribute('fill', '#ddeeff')
+  await expect(darkPiece.locator('text')).toHaveAttribute('fill', '#445566')
+  await expect(canvas.locator('pattern#grid path')).toHaveAttribute('stroke', '#112233')
+  expect(await canvas.evaluate((element) => getComputedStyle(element.parentElement!).backgroundColor)).toBe('rgb(1, 2, 3)')
+})
+
 test('keeps a 200-piece drag responsive and isolated to the moved piece', async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(
     fixture('200-pieces.json'),
@@ -408,9 +479,12 @@ test('keeps measurement and auto-fill behavior unchanged', async ({ page }) => {
   const firstPiece = canvas.locator('g[data-piece-id="1"]')
 
   await page.getByRole('button', { name: '测量距离', exact: true }).first().click()
-  await firstPiece.locator('circle').nth(-2).click()
-  await firstPiece.locator('circle').nth(-1).click()
-  await expect(canvas.getByText('50.0 mm', { exact: true })).toBeVisible()
+  const connectionPoints = firstPiece.locator('circle[data-measure-kind="connection"]')
+  await expect(connectionPoints).toHaveCount(2)
+  await connectionPoints.first().click()
+  await connectionPoints.last().click()
+  await expect(canvas.getByText('总长 50.0 mm', { exact: true })).toBeVisible()
+  await expect(canvas.locator('tspan').filter({ hasText: 'ΔX +43.3 mm · ΔY +25.0 mm' })).toBeVisible()
 
   await page.getByRole('button', { name: '自动补全直道', exact: true }).click()
   await firstPiece.locator('circle').nth(-2).click()
@@ -421,6 +495,48 @@ test('keeps measurement and auto-fill behavior unchanged', async ({ page }) => {
   const label = await generated.locator('text').textContent()
   expect(Number(label?.slice(1))).toBeCloseTo(50, 5)
   expect(await generated.getAttribute('transform')).toContain('translate(100, 200)')
+})
+
+test('measures straight corners and arbitrary canvas points with signed axes', async ({ page }) => {
+  await page.locator('input[type="file"]').setInputFiles(fixture('single-piece.json'))
+  const canvas = page.locator('svg[width="100%"][height="100%"]')
+  const piece = canvas.locator('g[data-piece-id="1"]')
+  const initialTransform = await piece.getAttribute('transform')
+
+  await page.getByRole('button', { name: '测量距离', exact: true }).first().click()
+  const startTop = piece.locator('circle[data-corner="start-top"]')
+  const endBottom = piece.locator('circle[data-corner="end-bottom"]')
+  await expect(startTop).toHaveCount(1)
+  await expect(endBottom).toHaveCount(1)
+  await startTop.click()
+  await endBottom.click()
+  await expect(canvas.getByText('总长 67.3 mm', { exact: true })).toBeVisible()
+  await expect(canvas.locator('tspan').filter({ hasText: 'ΔX +20.8 mm · ΔY +64.0 mm' })).toBeVisible()
+
+  await page.getByRole('button', { name: '测量距离', exact: true }).first().click()
+  const screenPoints = await canvas.evaluate((element, points) => {
+    const svg = element as SVGSVGElement
+    const matrix = svg.getScreenCTM()!
+    return points.map((point) => {
+      const svgPoint = svg.createSVGPoint()
+      svgPoint.x = point.x
+      svgPoint.y = point.y
+      const screenPoint = svgPoint.matrixTransform(matrix)
+      return { x: screenPoint.x, y: screenPoint.y }
+    })
+  }, [{ x: 143.3, y: 225 }, { x: 203.3, y: 145 }])
+
+  await page.mouse.click(screenPoints[0].x, screenPoints[0].y)
+  await page.mouse.click(screenPoints[1].x, screenPoints[1].y)
+  const totalText = await canvas.locator('tspan').filter({ hasText: '总长' }).textContent()
+  const axesText = await canvas.locator('tspan').filter({ hasText: 'ΔX' }).textContent()
+  const total = Number(totalText?.match(/总长 ([+-]?\d+(?:\.\d+)?)/)?.[1])
+  const axes = axesText?.match(/ΔX ([+-]?\d+(?:\.\d+)?) mm · ΔY ([+-]?\d+(?:\.\d+)?)/)
+  expect(Math.abs(total - 50)).toBeLessThan(1.5)
+  expect(Math.abs(Number(axes?.[1]) - 30)).toBeLessThan(1.5)
+  expect(Math.abs(Number(axes?.[2]) + 40)).toBeLessThan(1.5)
+  expect(await piece.getAttribute('transform')).toBe(initialTransform)
+  await expect(canvas.locator('rect[stroke="#3b82f6"]')).toHaveCount(0)
 })
 
 test('drags a multi-selection from the pressed piece without jumping', async ({ page }) => {
@@ -523,6 +639,29 @@ test('keeps multi-select rotation, deletion, archives, and recovery working', as
     (elements) => elements.map((element) => element.getAttribute('transform')),
   ))).not.toBe(JSON.stringify(transformsBefore))
 
+  const connectionCenter = async (pieceId: number, type: 'start' | 'end') => {
+    const box = await page.locator(
+      `g[data-piece-id="${pieceId}"] circle[data-connection-type="${type}"]`,
+    ).boundingBox()
+    expect(box).not.toBeNull()
+    return { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 }
+  }
+  const firstEnd = await connectionCenter(1, 'end')
+  const curveStart = await connectionCenter(2, 'start')
+  const curveEnd = await connectionCenter(2, 'end')
+  const lastStart = await connectionCenter(3, 'start')
+  expect(Math.hypot(firstEnd.x - curveStart.x, firstEnd.y - curveStart.y)).toBeLessThan(1)
+  expect(Math.hypot(curveEnd.x - lastStart.x, curveEnd.y - lastStart.y)).toBeLessThan(1)
+
+  await page.keyboard.press('Control+z')
+  await expect.poll(async () => JSON.stringify(await pieces.evaluateAll(
+    (elements) => elements.map((element) => element.getAttribute('transform')),
+  ))).toBe(JSON.stringify(transformsBefore))
+  await page.keyboard.press('Control+y')
+  await expect.poll(async () => JSON.stringify(await pieces.evaluateAll(
+    (elements) => elements.map((element) => element.getAttribute('transform')),
+  ))).not.toBe(JSON.stringify(transformsBefore))
+
   await page.keyboard.press('Control+s')
   await page.getByPlaceholder('输入存档名称').fill('回归存档')
   await page.getByRole('button', { name: '保存', exact: true }).click()
@@ -574,6 +713,10 @@ test('keeps minimap navigation responsive after viewport resize', async ({ page 
 
 test('exports BOM JSON and releases repeated PNG export resources', async ({ page }, testInfo) => {
   await page.locator('input[type="file"]').setInputFiles(fixture('connected.json'))
+  await page.getByRole('button', { name: '打开编辑器设置' }).click()
+  const settingsDialog = page.getByRole('dialog', { name: '编辑器设置' })
+  await settingsDialog.getByLabel('画布颜色').fill('#abcdef')
+  await settingsDialog.getByRole('button', { name: '保存设置' }).click()
 
   const [trackDownload] = await Promise.all([
     page.waitForEvent('download'),
@@ -597,7 +740,12 @@ test('exports BOM JSON and releases repeated PNG export resources', async ({ pag
   await page.getByRole('button', { name: /关闭/ }).click()
 
   await page.evaluate(() => {
-    const audit = { created: [] as string[], revoked: [] as string[], canvases: [] as HTMLCanvasElement[] }
+    const audit = {
+      created: [] as string[],
+      revoked: [] as string[],
+      canvases: [] as HTMLCanvasElement[],
+      backgroundFills: [] as string[],
+    }
     ;(window as typeof window & { __exportAudit?: typeof audit }).__exportAudit = audit
 
     const createObjectURL = URL.createObjectURL.bind(URL)
@@ -619,13 +767,19 @@ test('exports BOM JSON and releases repeated PNG export resources', async ({ pag
       return element
     }) as typeof document.createElement
 
+    let currentFillStyle = ''
     const context = {
       drawImage() {},
-      fillRect() {},
+      fillRect(x: number, y: number, width: number, height: number) {
+        if (x === 0 && y === 0 && width === 9600 && height === 3840) {
+          audit.backgroundFills.push(currentFillStyle)
+        }
+      },
       fillText() {},
       imageSmoothingEnabled: true,
       imageSmoothingQuality: 'high',
-      fillStyle: '',
+      get fillStyle() { return currentFillStyle },
+      set fillStyle(value: string | CanvasGradient | CanvasPattern) { currentFillStyle = String(value) },
       font: '',
     }
     HTMLCanvasElement.prototype.getContext = (() => context) as unknown as typeof HTMLCanvasElement.prototype.getContext
@@ -644,12 +798,23 @@ test('exports BOM JSON and releases repeated PNG export resources', async ({ pag
 
   await expect.poll(() => page.evaluate(() => {
     const audit = (window as typeof window & {
-      __exportAudit: { created: string[]; revoked: string[]; canvases: HTMLCanvasElement[] }
+      __exportAudit: {
+        created: string[]
+        revoked: string[]
+        canvases: HTMLCanvasElement[]
+        backgroundFills: string[]
+      }
     }).__exportAudit
     return {
       created: audit.created.length,
       revoked: audit.revoked.length,
       canvasSizes: audit.canvases.map((canvas) => [canvas.width, canvas.height]),
+      backgroundFills: audit.backgroundFills,
     }
-  })).toEqual({ created: 4, revoked: 4, canvasSizes: [[0, 0], [0, 0]] })
+  })).toEqual({
+    created: 4,
+    revoked: 4,
+    canvasSizes: [[0, 0], [0, 0]],
+    backgroundFills: ['#abcdef', '#abcdef'],
+  })
 })

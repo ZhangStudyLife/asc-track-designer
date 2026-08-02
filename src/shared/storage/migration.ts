@@ -19,6 +19,7 @@ const EXACT_KEYS = new Set<string>([
   TRACK_STORAGE_KEYS.trackArchives,
   TRACK_STORAGE_KEYS.currentTrackProject,
   TRACK_STORAGE_KEYS.theme,
+  TRACK_STORAGE_KEYS.editorSettings,
 ])
 
 export function isLegacyStorageKey(key: string) {

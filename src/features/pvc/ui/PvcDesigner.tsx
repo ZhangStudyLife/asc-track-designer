@@ -5,6 +5,7 @@ import { MeasurementOverlay } from './components/MeasurementOverlay'
 import { TrackCanvas } from './components/TrackCanvas'
 import { TrackPiecesLayer } from './components/TrackPiecesLayer'
 import { OnboardingTour, PVC_ONBOARDING_VERSION } from './components/OnboardingTour'
+import { SettingsDialog } from './components/SettingsDialog'
 import { easeViewBox, normalizeWheelDelta, zoomViewBox } from './viewport'
 import {
   findNearestConnectionPointInTargets,
@@ -13,21 +14,43 @@ import {
   getTrackPieceVisualCenter,
   SNAP_DISTANCE,
 } from '../domain/geometry'
+import { rotateTrackPieceSelection } from '../domain/selectionRotation'
 import { parseTrackCode } from '../domain/parser'
 import { calculateTrackStats as calculateStatsForPieces } from '../domain/stats'
 import { getPvcPieces, usePvcEditorStore } from '../application/editorStore'
+import {
+  DEFAULT_PVC_EDITOR_SETTINGS,
+  getThemeColors,
+  readEditorSettings,
+  shortcutMatchesEvent,
+  writeEditorSettings,
+  type PvcEditorSettings,
+} from '../application/editorSettings'
 import {
   flushPiecesHistory,
   pushPiecesHistory,
   redoPiecesHistory,
   undoPiecesHistory,
 } from '../application/storage'
-import type { ConnectionPoint, ConnectionPointRef, TrackPiece } from '../domain/types'
+import type { ConnectionPoint, ConnectionPointRef, MeasurementPointRef, TrackPiece } from '../domain/types'
 import { openTextFile, saveBlobFile, saveTextFile } from '../../../shared/platform/files'
 import { isTauriRuntime } from '../../../shared/platform/runtime'
 
 const DESIGN_BOUNDS = { width: 3200, height: 1600, x: -1600, y: -800 }
 const ZOOM_ANIMATION_MS = 100
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
+
+function getContrastTextColor(background: string) {
+  const red = Number.parseInt(background.slice(1, 3), 16)
+  const green = Number.parseInt(background.slice(3, 5), 16)
+  const blue = Number.parseInt(background.slice(5, 7), 16)
+  const luminance = (red * 299 + green * 587 + blue * 114) / 255000
+  return luminance > 0.55 ? '#1f2937' : '#f8fafc'
+}
 
 export default function PvcDesigner() {
   const pieceCount = usePvcEditorStore((state) => state.pieceIds.length)
@@ -38,7 +61,7 @@ export default function PvcDesigner() {
   // 测量吸附点距离相关状态
   const [isMeasuring, setIsMeasuring] = React.useState(false)
   // 记录测量点为 { pieceId, type: 'start'|'end' }
-  const [measurePoints, setMeasurePoints] = React.useState<ConnectionPointRef[]>([])
+  const [measurePoints, setMeasurePoints] = React.useState<MeasurementPointRef[]>([])
   // 自动补全直道相关状态
   const [isAutoFill, setIsAutoFill] = React.useState(false)
   const [autoFillPoints, setAutoFillPoints] = React.useState<ConnectionPointRef[]>([])
@@ -48,7 +71,7 @@ export default function PvcDesigner() {
   // 吸附点点击事件
   // 点击吸附点时传入pieceId和点类型
   // 测量模式下点击吸附点
-  const handleMeasurePointClick = (info: ConnectionPointRef) => {
+  const handleMeasurePointClick = (info: MeasurementPointRef) => {
     if (!isMeasuring) return;
     if (measurePoints.length === 0) {
       setMeasurePoints([info]);
@@ -210,6 +233,8 @@ export default function PvcDesigner() {
   const [hiddenFixedSizes, setHiddenFixedSizes] = React.useState<{straights: number[], curves: {radius: number, angle: number}[]}>({straights: [], curves: []})
   const [isClient, setIsClient] = React.useState(false)
   const [theme, setTheme] = React.useState<'light' | 'dark'>('light')
+  const [editorSettings, setEditorSettings] = React.useState<PvcEditorSettings>(DEFAULT_PVC_EDITOR_SETTINGS)
+  const [showSettings, setShowSettings] = React.useState(false)
   const [showOnboarding, setShowOnboarding] = React.useState(false)
   const [statusMessage, setStatusMessage] = React.useState('')
   const statusTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -244,6 +269,9 @@ export default function PvcDesigner() {
   const dragOffsetRef = React.useRef(dragOffset)
   const isClientRef = React.useRef(isClient)
   const currentArchiveNameRef = React.useRef(currentArchiveName)
+  const editorSettingsRef = React.useRef(editorSettings)
+  const showSettingsRef = React.useRef(showSettings)
+  const showOnboardingRef = React.useRef(showOnboarding)
   selectedIdRef.current = selectedId
   selectedIdsRef.current = selectedIds
   isDraggingRef.current = isDragging
@@ -252,6 +280,9 @@ export default function PvcDesigner() {
   dragOffsetRef.current = dragOffset
   isClientRef.current = isClient
   currentArchiveNameRef.current = currentArchiveName
+  editorSettingsRef.current = editorSettings
+  showSettingsRef.current = showSettings
+  showOnboardingRef.current = showOnboarding
 
   const showStatusMessage = React.useCallback((message: string, duration = 2000) => {
     setStatusMessage(message)
@@ -308,6 +339,8 @@ export default function PvcDesigner() {
   // 撤销功能：Ctrl+Z
   React.useEffect(() => {
     const handleUndoKey = (e: KeyboardEvent) => {
+      if (e.isComposing || isEditableTarget(e.target)) return
+      if (showSettingsRef.current || showOnboardingRef.current) return
       if (!e.ctrlKey && !e.metaKey) return
 
       const key = e.key.toLowerCase()
@@ -358,6 +391,8 @@ export default function PvcDesigner() {
         setTheme(savedTheme)
       }
 
+      setEditorSettings(readEditorSettings())
+
       setShowOnboarding(localStorage.getItem('pvcOnboardingVersion') !== PVC_ONBOARDING_VERSION)
       
       // 加载当前项目
@@ -378,6 +413,13 @@ export default function PvcDesigner() {
       localStorage.setItem('trackDesignerTheme', theme)
     }
   }, [isClient, theme])
+
+  const saveEditorSettings = React.useCallback((nextSettings: PvcEditorSettings) => {
+    setEditorSettings(nextSettings)
+    writeEditorSettings(nextSettings)
+    setShowSettings(false)
+    showStatusMessage('设置已保存', 1200)
+  }, [showStatusMessage])
 
 
   // 禁用右键菜单
@@ -685,8 +727,8 @@ export default function PvcDesigner() {
         ctx.imageSmoothingEnabled = true
         ctx.imageSmoothingQuality = 'high'
         
-        // 白色背景
-        ctx.fillStyle = 'white'
+        // 使用当前主题设置的画布背景
+        ctx.fillStyle = canvasColors.canvasBackground
         ctx.fillRect(0, 0, canvas.width, canvas.height)
         
         // 绘制SVG (保持在左侧)
@@ -697,7 +739,7 @@ export default function PvcDesigner() {
         const bomStartY = 100
         
         // 标题
-        ctx.fillStyle = '#1f2937'
+        ctx.fillStyle = getContrastTextColor(canvasColors.canvasBackground)
         ctx.font = 'bold 80px Arial'
         ctx.fillText('📋 BOM物料清单', bomStartX, bomStartY)
         
@@ -715,7 +757,7 @@ export default function PvcDesigner() {
         
         // 元件列表标题
         let currentY = bomStartY + 320
-        ctx.fillStyle = '#1f2937'
+        ctx.fillStyle = getContrastTextColor(canvasColors.canvasBackground)
         ctx.font = 'bold 60px Arial'
         ctx.fillText('🏆 赛道元件统计', bomStartX, currentY)
         
@@ -1119,22 +1161,24 @@ export default function PvcDesigner() {
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing || e.code === 'Process' || isEditableTarget(e.target)) return
+      if (showSettingsRef.current || showOnboardingRef.current) return
       // Ctrl+S 保存
-      if (e.ctrlKey && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
         saveAsArchiveRef.current()
         return
       }
       
       // Ctrl+O 打开
-      if (e.ctrlKey && e.key === 'o') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
         e.preventDefault()
         void openTrackFromJSONRef.current()
         return
       }
       
       // Ctrl+E 导出图片
-      if (e.ctrlKey && e.key === 'e') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
         e.preventDefault()
         exportAsImageRef.current()
         return
@@ -1142,20 +1186,25 @@ export default function PvcDesigner() {
       
       const activeSelectedId = selectedIdRef.current
       const activeSelectedIds = selectedIdsRef.current
+      const idsToRotate = new Set(activeSelectedIds.length > 0
+        ? activeSelectedIds
+        : (activeSelectedId !== null ? [activeSelectedId] : []))
+      const settings = editorSettingsRef.current
+      const rotationDelta = shortcutMatchesEvent(settings.rotateLeft, e)
+        ? -settings.rotationStep
+        : shortcutMatchesEvent(settings.rotateRight, e)
+          ? settings.rotationStep
+          : null
 
-      if (e.key === 'Tab' && (activeSelectedId !== null || activeSelectedIds.length > 0)) {
+      if (rotationDelta !== null && idsToRotate.size > 0) {
         e.preventDefault()
         // Tab键：旋转选中的赛道，并同步入栈
-        const idsToRotate = new Set(activeSelectedIds.length > 0 ? activeSelectedIds : (activeSelectedId !== null ? [activeSelectedId] : []))
         setPieces(prev => {
-          const next = prev.map(p =>
-            idsToRotate.has(p.id)
-              ? { ...p, rotation: (p.rotation - 15) % 360 }
-              : p
-          );
-          pushPiecesHistory(next);
-          return next;
-        });
+          pushPiecesHistory(prev)
+          const next = rotateTrackPieceSelection(prev, idsToRotate, rotationDelta)
+          pushPiecesHistory(next)
+          return next
+        })
       } else if (e.key === 'Delete') {
         // Delete键：删除选中元件，并同步入栈
         const idsToDelete = new Set(activeSelectedIds.length > 0 ? activeSelectedIds : (activeSelectedId !== null ? [activeSelectedId] : []))
@@ -1247,6 +1296,12 @@ export default function PvcDesigner() {
   // 鼠标事件处理 - 支持多选和框选
   const handleMouseDown = (e: React.MouseEvent, piece?: any) => {
     cancelZoomAnimation()
+    if (isMeasuring && e.button === 0) {
+      e.stopPropagation()
+      const coords = getMouseSVGCoords(e)
+      handleMeasurePointClick({ kind: 'canvas', x: coords.x, y: coords.y })
+      return
+    }
     if (piece) {
       if (e.button !== 0) return
       e.stopPropagation()
@@ -1446,12 +1501,13 @@ export default function PvcDesigner() {
   }
 
   const isDark = theme === 'dark'
+  const canvasColors = getThemeColors(editorSettings, theme)
   const ui = {
     appBg: isDark ? '#020817' : '#eef2f7',
     panel: isDark ? '#0f172a' : '#ffffff',
     panelSoft: isDark ? '#111c30' : '#f8fafc',
-    canvas: isDark ? '#08111f' : '#f8fafc',
-    canvasGrid: isDark ? '#203047' : '#e7edf5',
+    canvas: canvasColors.canvasBackground,
+    canvasGrid: canvasColors.grid,
     border: isDark ? '#23324a' : '#dbe3ee',
     borderStrong: isDark ? '#334155' : '#cbd5e1',
     text: isDark ? '#e5e7eb' : '#111827',
@@ -1576,14 +1632,21 @@ export default function PvcDesigner() {
         key: 'measure-btn',
         style: isMeasuring ? { ...primaryButton, backgroundColor: '#f59e0b', borderColor: '#f59e0b', color: '#ffffff' } : buttonBase,
         onClick: () => { setIsMeasuring(true); setMeasurePoints([]); setIsAutoFill(false); setAutoFillPoints([]); },
-        title: isMeasuring ? '依次点击两个吸附点' : '点击后可测量两个吸附点间距离'
-      }, isMeasuring ? (measurePoints.length === 1 ? '再点一个吸附点' : '点击吸附点') : '测量距离'),
+        title: isMeasuring ? '依次点击两个测量点' : '测量吸附点、直道角点或画布任意点'
+      }, isMeasuring ? (measurePoints.length === 1 ? '再点一个测量点' : '点击测量点') : '测量距离'),
       React.createElement('button', {
         key: 'theme-toggle',
         style: buttonBase,
         onClick: () => setTheme(prev => prev === 'light' ? 'dark' : 'light'),
         title: '切换白天/夜间模式'
       }, theme === 'light' ? '夜间' : '白天'),
+      React.createElement('button', {
+        key: 'editor-settings',
+        'aria-label': '打开编辑器设置',
+        style: buttonBase,
+        onClick: () => setShowSettings(true),
+        title: '快捷键与画布颜色设置',
+      }, '设置'),
       React.createElement('button', {
         key: 'onboarding-help',
         'aria-label': '打开新手引导',
@@ -1622,6 +1685,8 @@ export default function PvcDesigner() {
       React.createElement(MiniMap, {
         viewBox,
         dragging: draggingMini,
+        trackColor: canvasColors.track,
+        canvasColor: canvasColors.canvasBackground,
         onMouseDown: handleMiniMouseDown,
         onMouseMove: handleMiniMouseMove,
         onMouseUp: handleMiniMouseUp,
@@ -2292,7 +2357,7 @@ export default function PvcDesigner() {
         cursor: isPanning || isDragging ? 'grabbing' : 'default',
         onMouseDown: (e) => {
           handleMouseDown(e)
-          startCanvasPan(e)
+          if (!(isMeasuring && e.button === 0)) startCanvasPan(e)
         },
         onMouseMove: handleMouseMove,
         onMouseUp: () => {
@@ -2379,6 +2444,8 @@ export default function PvcDesigner() {
           selectedId,
           selectedIds: selectedIdsSet,
           isDark,
+          trackColor: canvasColors.track,
+          dimensionLabelColor: canvasColors.dimensionLabel,
           isMeasuring,
           isAutoFill,
           onMouseDown: handleMouseDown,
@@ -2408,7 +2475,7 @@ export default function PvcDesigner() {
           boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
         },
         onClick: startMeasure
-      }, isMeasuring ? '点击吸附点（第2个）' : '测量距离'),
+      }, isMeasuring ? (measurePoints.length === 1 ? '点击第二个测量点' : '点击第一个测量点') : '测量距离'),
         
         // 选择框显示 - 优化样式和精度
         selectionBox ? React.createElement('rect', {
@@ -3012,6 +3079,14 @@ export default function PvcDesigner() {
       }),
 
       // 角落快捷键提示卡片
+      React.createElement(SettingsDialog, {
+        key: 'editor-settings-dialog',
+        open: showSettings,
+        isDark,
+        value: editorSettings,
+        onCancel: () => setShowSettings(false),
+        onSave: saveEditorSettings,
+      }),
       React.createElement('div', {
         key: 'shortcut-card',
         style: {

@@ -13,6 +13,7 @@ export const TRACK_STORAGE_KEYS = {
   trackArchives: 'trackArchives',
   currentTrackProject: 'currentTrackProject',
   theme: 'trackDesignerTheme',
+  editorSettings: 'pvcEditorSettings',
   archivePrefix: 'archive_',
 } as const
 

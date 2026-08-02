@@ -34,11 +34,13 @@ describe('legacy desktop state migration', () => {
     storage.setItem('currentTrackProject', '{"pieces":[]}')
     storage.setItem('archive_test', '{"pieces":[1]}')
     storage.setItem('trackDesignerTheme', 'dark')
+    storage.setItem('pvcEditorSettings', '{"version":1}')
     storage.setItem('unrelated', 'ignored')
 
     expect(collectLegacyStorage(storage)).toEqual({
       archive_test: '{"pieces":[1]}',
       currentTrackProject: '{"pieces":[]}',
+      pvcEditorSettings: '{"version":1}',
       trackDesignerTheme: 'dark',
     })
   })

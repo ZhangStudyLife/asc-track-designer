@@ -5,6 +5,8 @@ import { selectPvcPieces, usePvcEditorStore } from '../../application/editorStor
 type MiniMapProps = {
   viewBox: { x: number; y: number; width: number; height: number }
   dragging: boolean
+  trackColor: string
+  canvasColor: string
   onMouseDown?: (e: React.MouseEvent<SVGSVGElement>) => void
   onMouseMove?: (e: React.MouseEvent<SVGSVGElement>) => void
   onMouseUp?: (e: React.MouseEvent<SVGSVGElement>) => void
@@ -28,7 +30,15 @@ export const MINI_MAP_METRICS = {
   scaleY,
 }
 
-export function MiniMap({ viewBox, dragging, onMouseDown, onMouseMove, onMouseUp }: MiniMapProps) {
+export function MiniMap({
+  viewBox,
+  dragging,
+  trackColor,
+  canvasColor,
+  onMouseDown,
+  onMouseMove,
+  onMouseUp,
+}: MiniMapProps) {
   const pieces = usePvcEditorStore(useShallow(selectPvcPieces))
   const rectX = (viewBox.x - designX) * scaleX
   const rectY = (viewBox.y - designY) * scaleY
@@ -40,7 +50,7 @@ export function MiniMap({ viewBox, dragging, onMouseDown, onMouseMove, onMouseUp
       width={miniWidth}
       height={miniHeight}
       viewBox={`0 0 ${miniWidth} ${miniHeight}`}
-      style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 6, cursor: dragging ? 'grabbing' : 'pointer' }}
+      style={{ background: canvasColor, border: '1px solid #d1d5db', borderRadius: 6, cursor: dragging ? 'grabbing' : 'pointer' }}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseUp}
@@ -52,7 +62,7 @@ export function MiniMap({ viewBox, dragging, onMouseDown, onMouseMove, onMouseUp
           const y1 = (piece.y - designY) * scaleY
           const x2 = (piece.x + piece.params.length * Math.cos((piece.rotation || 0) * Math.PI / 180) - designX) * scaleX
           const y2 = (piece.y + piece.params.length * Math.sin((piece.rotation || 0) * Math.PI / 180) - designY) * scaleY
-          return <line key={piece.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#6366f1" strokeWidth={4} strokeLinecap="round" />
+          return <line key={piece.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={trackColor} strokeWidth={4} strokeLinecap="round" />
         }
 
         if (piece.type === 'curve') {
@@ -69,7 +79,7 @@ export function MiniMap({ viewBox, dragging, onMouseDown, onMouseMove, onMouseUp
           const y2 = cy + r * Math.sin(endAngle) * scaleY
           const largeArc = angle > 180 ? 1 : 0
           const d = `M${x1},${y1} A${r * scaleX},${r * scaleY} 0 ${largeArc} 1 ${x2},${y2}`
-          return <path key={piece.id} d={d} stroke="#f59e42" strokeWidth={4} fill="none" />
+          return <path key={piece.id} d={d} stroke={trackColor} strokeWidth={4} fill="none" />
         }
 
         return null
