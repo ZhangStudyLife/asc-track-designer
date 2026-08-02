@@ -1,4 +1,8 @@
+#![cfg_attr(test, allow(dead_code, unused_imports))]
+
 use std::{fs, path::PathBuf};
+
+mod updater;
 
 const WEBVIEW2_LOADER: &[u8] = include_bytes!("../vendor/webview2-com-sys/x64/WebView2Loader.dll");
 
@@ -9,7 +13,7 @@ fn migration_directory() -> Result<PathBuf, String> {
         .ok_or_else(|| "APPDATA is unavailable".to_string())
 }
 
-#[tauri::command]
+#[cfg_attr(not(test), tauri::command)]
 fn read_legacy_migration() -> Result<Option<String>, String> {
     let directory = migration_directory()?;
     if directory.join("migration-state-v1.imported").exists() {
@@ -26,7 +30,7 @@ fn read_legacy_migration() -> Result<Option<String>, String> {
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
+#[cfg_attr(not(test), tauri::command)]
 fn mark_legacy_migration_imported() -> Result<(), String> {
     let directory = migration_directory()?;
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
@@ -113,6 +117,7 @@ fn show_startup_error(message: &str) {
     eprintln!("ASC Track Designer failed to start: {message}");
 }
 
+#[cfg(not(test))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if let Err(error) = prepare_webview2_loader() {
@@ -127,9 +132,14 @@ pub fn run() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             read_legacy_migration,
             mark_legacy_migration_imported,
+            updater::check_for_update,
+            updater::download_update,
+            updater::install_update,
+            updater::confirm_update_startup,
         ])
         .run(tauri::generate_context!());
 

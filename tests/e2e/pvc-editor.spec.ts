@@ -14,6 +14,45 @@ test.beforeEach(async ({ page }) => {
   await page.reload()
 })
 
+test('registers storage schema v1 without rewriting existing project data', async ({ page }) => {
+  const legacyData = {
+    currentTrackProject: JSON.stringify({ name: '旧项目', pieces: [] }),
+    piecesHistory: JSON.stringify([[]]),
+    trackSizes: JSON.stringify([{ id: 'legacy-size', size: 50 }]),
+    pvcEditorSettings: JSON.stringify({ version: 1 }),
+  }
+  await page.evaluate((values) => {
+    localStorage.clear()
+    localStorage.setItem('pvcOnboardingVersion', '1')
+    Object.entries(values).forEach(([key, value]) => localStorage.setItem(key, value))
+  }, legacyData)
+  await page.reload()
+
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('ascStorageSchemaVersion'))).toBe('1')
+  await expect.poll(() => page.evaluate(() => ({
+    currentTrackProject: localStorage.getItem('currentTrackProject'),
+    piecesHistory: localStorage.getItem('piecesHistory'),
+    trackSizes: localStorage.getItem('trackSizes'),
+    pvcEditorSettings: localStorage.getItem('pvcEditorSettings'),
+  }))).toEqual(legacyData)
+})
+
+test('shows version and safe project links in settings on the web', async ({ page }) => {
+  await page.getByRole('button', { name: '打开编辑器设置' }).click()
+  const dialog = page.getByRole('dialog', { name: '编辑器设置' })
+
+  await expect(dialog.getByRole('region', { name: '关于' })).toContainText('v2.2.0')
+  await expect(dialog.getByRole('link', { name: '打开项目仓库' })).toHaveAttribute(
+    'href',
+    'https://github.com/ZhangStudyLife/asc-track-designer',
+  )
+  await expect(dialog.getByRole('link', { name: '打开作者主页' })).toHaveAttribute(
+    'href',
+    'https://github.com/ZhangStudyLife',
+  )
+  await expect(dialog.getByRole('button', { name: '检查更新' })).toHaveCount(0)
+})
+
 test('shows the first-run tour once and allows replay from help', async ({ page }) => {
   await page.evaluate(() => localStorage.clear())
   await page.reload()

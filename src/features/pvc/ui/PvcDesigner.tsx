@@ -6,6 +6,8 @@ import { TrackCanvas } from './components/TrackCanvas'
 import { TrackPiecesLayer } from './components/TrackPiecesLayer'
 import { OnboardingTour, PVC_ONBOARDING_VERSION } from './components/OnboardingTour'
 import { SettingsDialog } from './components/SettingsDialog'
+import { UpdateDialog } from '../../updater/ui/UpdateDialog'
+import { useUpdater } from '../../updater/ui/useUpdater'
 import { easeViewBox, normalizeWheelDelta, zoomViewBox } from './viewport'
 import {
   findNearestConnectionPointInTargets,
@@ -35,6 +37,8 @@ import {
 import type { ConnectionPoint, ConnectionPointRef, MeasurementPointRef, TrackPiece } from '../domain/types'
 import { openTextFile, saveBlobFile, saveTextFile } from '../../../shared/platform/files'
 import { isTauriRuntime } from '../../../shared/platform/runtime'
+import { confirmUpdateStartup } from '../../../shared/platform/updater'
+import { initializeStorageSchema } from '../../../shared/storage/schema'
 
 const DESIGN_BOUNDS = { width: 3200, height: 1600, x: -1600, y: -800 }
 const ZOOM_ANIMATION_MS = 100
@@ -402,8 +406,14 @@ export default function PvcDesigner() {
         setPieces(projectData.pieces || [])
         setCurrentArchiveName(projectData.name || '未命名项目')
       }
+
+      initializeStorageSchema()
     } catch {
       setShowOnboarding(true)
+    } finally {
+      void confirmUpdateStartup().catch(() => {
+        // A failed confirmation leaves the old EXE backup available for recovery.
+      })
     }
   }, [setPieces])
 
@@ -420,6 +430,34 @@ export default function PvcDesigner() {
     setShowSettings(false)
     showStatusMessage('设置已保存', 1200)
   }, [showStatusMessage])
+
+  const persistCurrentProjectNow = React.useCallback(() => {
+    if (!isClientRef.current) return false
+
+    try {
+      const projectData = {
+        name: currentArchiveNameRef.current,
+        pieces: getPvcPieces(),
+        viewBox: viewBoxRef.current,
+        timestamp: new Date().toISOString(),
+      }
+      localStorage.setItem('currentTrackProject', JSON.stringify(projectData))
+      flushPiecesHistory()
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+
+  const updater = useUpdater({
+    onBeforeInstall: persistCurrentProjectNow,
+    onStatusMessage: showStatusMessage,
+  })
+
+  const checkForUpdatesFromSettings = React.useCallback(async () => {
+    const release = await updater.checkNow(true)
+    if (release) setShowSettings(false)
+  }, [updater.checkNow])
 
 
   // 禁用右键菜单
@@ -1616,7 +1654,24 @@ export default function PvcDesigner() {
               color: ui.muted
             }
           }, '实验室内部专用工具')
-        ])
+        ]),
+        updater.release ? React.createElement('button', {
+          key: 'update-available',
+          'aria-label': `发现新版本 ${updater.release.version}`,
+          onClick: updater.showUpdate,
+          style: {
+            minHeight: 30,
+            padding: '0 10px',
+            border: '1px solid #38bdf8',
+            borderRadius: 6,
+            background: isDark ? '#082f49' : '#e0f2fe',
+            color: isDark ? '#7dd3fc' : '#0369a1',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+          },
+        }, `发现 ${updater.release.version}`) : null,
       ]),
     // 工具栏右侧功能按钮区（含测量按钮）
     React.createElement('div', {
@@ -3086,6 +3141,23 @@ export default function PvcDesigner() {
         value: editorSettings,
         onCancel: () => setShowSettings(false),
         onSave: saveEditorSettings,
+        onCheckForUpdates: isTauriRuntime() ? checkForUpdatesFromSettings : undefined,
+        updateStatus: updater.status,
+        updateMessage: updater.checkMessage,
+      }),
+      React.createElement(UpdateDialog, {
+        key: 'update-dialog',
+        open: updater.dialogOpen,
+        isDark,
+        release: updater.release,
+        status: updater.status,
+        progress: updater.progress,
+        downloaded: updater.downloaded,
+        error: updater.error,
+        onLater: updater.later,
+        onSkip: updater.skip,
+        onStart: updater.start,
+        onRetry: updater.retry,
       }),
       React.createElement('div', {
         key: 'shortcut-card',

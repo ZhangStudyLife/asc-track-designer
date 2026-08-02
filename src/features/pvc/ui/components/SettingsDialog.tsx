@@ -6,6 +6,10 @@ import {
   validateEditorSettings,
   type PvcEditorSettings,
 } from '../../application/editorSettings'
+import type { UpdaterStatus } from '../../../updater/types'
+import { APP_VERSION, AUTHOR_URL, REPOSITORY_URL } from '../../../../shared/appInfo'
+import { openExternalUrl } from '../../../../shared/platform/externalLinks'
+import { isTauriRuntime } from '../../../../shared/platform/runtime'
 
 type SettingsDialogProps = {
   open: boolean
@@ -13,6 +17,9 @@ type SettingsDialogProps = {
   value: PvcEditorSettings
   onCancel: () => void
   onSave: (value: PvcEditorSettings) => void
+  onCheckForUpdates?: () => void
+  updateStatus?: UpdaterStatus
+  updateMessage?: string
 }
 
 type ShortcutName = 'rotateLeft' | 'rotateRight'
@@ -56,7 +63,16 @@ function validationError(value: PvcEditorSettings) {
   return '快捷键或颜色设置无效，请检查后重试。'
 }
 
-export function SettingsDialog({ open, isDark, value, onCancel, onSave }: SettingsDialogProps) {
+export function SettingsDialog({
+  open,
+  isDark,
+  value,
+  onCancel,
+  onSave,
+  onCheckForUpdates,
+  updateStatus = 'idle',
+  updateMessage = '',
+}: SettingsDialogProps) {
   const [draft, setDraft] = React.useState(() => cloneSettings(value))
   const [rotationStep, setRotationStep] = React.useState(String(value.rotationStep))
   const [capturing, setCapturing] = React.useState<ShortcutName | null>(null)
@@ -270,6 +286,23 @@ export function SettingsDialog({ open, isDark, value, onCancel, onSave }: Settin
     </div>
   )
 
+  const externalLink = (url: string, label: string, ariaLabel: string) => (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={ariaLabel}
+      onClick={(event) => {
+        if (!isTauriRuntime()) return
+        event.preventDefault()
+        void openExternalUrl(url)
+      }}
+      style={{ color: palette.primary, fontSize: 12, textDecoration: 'none' }}
+    >
+      {label}
+    </a>
+  )
+
   return (
     <div
       style={{
@@ -384,6 +417,42 @@ export function SettingsDialog({ open, isDark, value, onCancel, onSave }: Settin
               </div>
             </section>
 
+            <section aria-label="关于">
+              <h3 style={{ margin: '0 0 10px', fontSize: 13 }}>关于</h3>
+              <div style={{ display: 'grid', gap: 10, padding: 12, border: `1px solid ${palette.border}`, borderRadius: 6, background: palette.panelSoft }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, fontSize: 12 }}>
+                  <span style={{ color: palette.muted }}>ASC 赛道设计器</span>
+                  <strong>v{APP_VERSION}</strong>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                  {externalLink(REPOSITORY_URL, '项目仓库', '打开项目仓库')}
+                  {externalLink(AUTHOR_URL, '作者主页', '打开作者主页')}
+                </div>
+                {onCheckForUpdates ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                    <span role="status" style={{ color: updateStatus === 'error' ? palette.danger : palette.muted, fontSize: 12 }}>
+                      {updateMessage || '可手动检查 GitHub Release 更新'}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="检查更新"
+                      onClick={onCheckForUpdates}
+                      disabled={updateStatus === 'checking'}
+                      style={{
+                        ...buttonStyle,
+                        minHeight: 30,
+                        fontSize: 12,
+                        cursor: updateStatus === 'checking' ? 'wait' : 'pointer',
+                        opacity: updateStatus === 'checking' ? 0.7 : 1,
+                      }}
+                    >
+                      {updateStatus === 'checking' ? '检查中…' : '检查更新'}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+
             {error ? (
               <div
                 role="alert"
@@ -401,7 +470,7 @@ export function SettingsDialog({ open, isDark, value, onCancel, onSave }: Settin
             ) : null}
           </div>
 
-          <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 18px', borderTop: `1px solid ${palette.border}` }}>
+          <footer style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, padding: '12px 18px', borderTop: `1px solid ${palette.border}` }}>
             <button type="button" aria-label="取消设置" onClick={cancel} style={buttonStyle}>取消</button>
             <button
               type="submit"

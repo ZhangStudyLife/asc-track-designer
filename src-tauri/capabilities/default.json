@@ -8,6 +8,14 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "fs:allow-read-text-file",
-    "fs:allow-write-file"
+    "fs:allow-write-file",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://github.com/ZhangStudyLife/asc-track-designer" },
+        { "url": "https://github.com/ZhangStudyLife" },
+        { "url": "https://github.com/ZhangStudyLife/asc-track-designer/releases/tag/*" }
+      ]
+    }
   ]
 }

@@ -1,6 +1,6 @@
 {
   "name": "asc-track-designer",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "ASC实验室智能车赛道设计器 - 专业的赛道布局设计工具",
   "private": true,
   "author": "ASC实验室",
@@ -17,6 +17,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "dist": "npm run dist:win",
     "dist:win": "powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1",
+    "manifest:update": "node scripts/create-update-manifest.mjs",
     "lint": "eslint src tests --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
@@ -31,10 +32,10 @@
   "devDependencies": {
     "@playwright/test": "^1.54.1",
     "@tauri-apps/cli": "^2.11.4",
-    "@typescript-eslint/parser": "^8.39.0",
     "@types/node": "^20.17.9",
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.3.7",
+    "@typescript-eslint/parser": "^8.39.0",
     "@vitejs/plugin-react": "^4.3.4",
     "eslint": "^8.57.1",
     "react": "^18.3.1",
@@ -48,6 +49,7 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-opener": "^2.5.4",
     "zustand": "^5.0.8"
   }
 }
