@@ -9,6 +9,21 @@ test.beforeEach(async ({ page }) => {
   await page.reload()
 })
 
+test('opens the workshop directly inside the query provider', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.route(/https:\/\/.*\.supabase\.co\//, (route) => route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({ message: 'Workshop unavailable' }),
+  }))
+
+  await page.goto('/#/workshop')
+  await expect(page.getByRole('heading', { name: '发现公开赛道' })).toBeVisible()
+  await expect(page.getByText('创意工坊暂时不可用')).toBeVisible({ timeout: 20_000 })
+  expect(pageErrors).not.toContain('No QueryClient set, use QueryClientProvider to set one')
+})
+
 test('keeps the editor usable when the workshop backend is unavailable', async ({ page }) => {
   await expect(page).toHaveURL(/#\/editor$/)
   await page.getByRole('button', { name: 'L50', exact: true }).click()

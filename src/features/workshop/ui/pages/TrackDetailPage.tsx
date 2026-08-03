@@ -109,7 +109,10 @@ export function TrackDetailPage() {
   const ratingMutation = useMutation({ mutationFn: (value: number) => setRating(trackId, value, auth.user!.id), onSuccess: refreshTrack })
   const commentMutation = useMutation({
     mutationFn: (body: string) => createComment({ trackId, authorId: auth.user!.id, body }),
-    onSuccess: () => void cache.invalidateQueries({ queryKey: ['workshop-comments', trackId] }),
+    onSuccess: () => {
+      refreshTrack()
+      void cache.invalidateQueries({ queryKey: ['workshop-comments', trackId] })
+    },
   })
   const replyMutation = useMutation({
     mutationFn: (body: string) => createComment({
@@ -122,6 +125,7 @@ export function TrackDetailPage() {
     }),
     onSuccess: () => {
       setReply(null)
+      refreshTrack()
       void cache.invalidateQueries({ queryKey: ['workshop-comments', trackId] })
     },
   })

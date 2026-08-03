@@ -65,7 +65,7 @@ function Workspace() {
 
   if (!workshopActivated && !needsWorkshop) return shell
   return (
-    <React.Suspense fallback={shell}>
+    <React.Suspense fallback={<div className="workspace-loading">正在打开创意工坊...</div>}>
       <WorkshopProvider>{shell}</WorkshopProvider>
     </React.Suspense>
   )
