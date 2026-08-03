@@ -11,7 +11,7 @@ Deno.serve((request) => handleRequest(request, async () => {
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
   const { data: tracks, error } = await service
     .from('tracks')
-    .select('id, track_revisions(json_path, preview_path)')
+    .select('id, track_revisions!track_revisions_track_id_fkey(json_path, preview_path)')
     .eq('status', 'deleted')
     .lt('deleted_at', cutoff)
     .limit(100)
