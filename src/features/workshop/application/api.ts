@@ -189,18 +189,23 @@ export async function listNotifications(): Promise<WorkshopNotification[]> {
 export async function setLike(trackId: string, liked: boolean, userId: string) {
   const client = requireWorkshopClient()
   const request = liked
-    ? client.from('likes').upsert({ track_id: trackId, user_id: userId })
+    ? client.from('likes').upsert(
+      { track_id: trackId, user_id: userId },
+      { onConflict: 'track_id,user_id', ignoreDuplicates: true },
+    )
     : client.from('likes').delete().eq('track_id', trackId).eq('user_id', userId)
   const { error } = await request
   if (error) throw error
 }
 
 export async function setRating(trackId: string, value: number, userId: string) {
-  const { error } = await requireWorkshopClient().from('ratings').upsert({
-    track_id: trackId,
-    user_id: userId,
-    value,
-  })
+  const client = requireWorkshopClient()
+  const existing = await client.from('ratings').select('value').eq('track_id', trackId).eq('user_id', userId).maybeSingle()
+  if (existing.error) throw existing.error
+  const request = existing.data
+    ? client.from('ratings').update({ value }).eq('track_id', trackId).eq('user_id', userId)
+    : client.from('ratings').insert({ track_id: trackId, user_id: userId, value })
+  const { error } = await request
   if (error) throw error
 }
 
