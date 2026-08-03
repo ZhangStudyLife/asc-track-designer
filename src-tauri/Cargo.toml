@@ -1,13 +1,13 @@
 [package]
 name = "asc-track-designer"
-version = "2.2.0"
+version = "2.3.0"
 description = "ASC track designer"
 authors = ["ASC Laboratory"]
 edition = "2021"
 
 [lib]
 name = "asc_track_designer_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -21,6 +21,7 @@ sha2 = "0.10"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 ureq = { version = "2.12", default-features = false, features = ["json", "native-tls"] }
 url = "2"
@@ -28,7 +29,7 @@ url = "2"
 [target.'cfg(windows)'.dependencies]
 webview2-com-sys = "0.38.2"
 windows-core = "0.61"
-windows-sys = { version = "0.59", features = ["Win32_System_Com", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_System_Com", "Win32_UI_WindowsAndMessaging"] }
 
 [patch.crates-io]
 webview2-com-sys = { path = "vendor/webview2-com-sys" }

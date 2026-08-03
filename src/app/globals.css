@@ -9,6 +9,113 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   line-height: 1.5;
   color: #333;
+  overflow: hidden;
+}
+
+.app-workspace-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #eef1f4;
+}
+
+.workspace-nav {
+  position: relative;
+  z-index: 1000;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 14px;
+  border-bottom: 1px solid #273548;
+  background: #17202d;
+  color: #f8fafc;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.18);
+}
+
+.workspace-brand,
+.workspace-account-link,
+.workspace-tabs a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.workspace-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.workspace-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 27px;
+  border: 1px solid #5e738d;
+  border-radius: 5px;
+  background: #243246;
+  color: #8fd8c8;
+  font-size: 11px;
+}
+
+.workspace-tabs {
+  align-self: stretch;
+  display: flex;
+  align-items: stretch;
+}
+
+.workspace-tabs a,
+.workspace-account-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 112px;
+  padding: 0 14px;
+  color: #b7c3d2;
+  font-size: 13px;
+  font-weight: 650;
+  border-bottom: 2px solid transparent;
+}
+
+.workspace-tabs a:hover,
+.workspace-tabs a.is-active,
+.workspace-account-link:hover {
+  background: #213044;
+  color: #ffffff;
+  border-bottom-color: #6ed6bd;
+  opacity: 1;
+}
+
+.workspace-account-link {
+  min-width: auto;
+  margin-left: auto;
+}
+
+.workspace-content {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.workspace-loading {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #526174;
+  font-size: 14px;
+}
+
+@media (max-width: 760px) {
+  .workspace-nav { gap: 5px; padding: 0 8px; }
+  .workspace-brand > span:last-child,
+  .workspace-tabs span,
+  .workspace-account-link span { display: none; }
+  .workspace-tabs a { min-width: 46px; padding: 0 10px; }
+  .workspace-account-link { padding: 0 10px; }
 }
 
 .h-screen {

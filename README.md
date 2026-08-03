@@ -1,6 +1,6 @@
 # ASC Track Designer
 
-ASC Track Designer is a React and TypeScript editor for laying out PVC intelligent-car tracks. The desktop application uses Tauri 2 and the system WebView2 runtime; the same Vite frontend can be deployed as a static website.
+ASC Track Designer is a React and TypeScript editor for laying out PVC intelligent-car tracks. It also includes an optional Supabase-backed workshop for publishing, downloading, rating, and discussing public tracks. The desktop application uses Tauri 2 and the system WebView2 runtime; the same Vite frontend can be deployed as a static website.
 
 ## Requirements
 
@@ -16,6 +16,8 @@ npm run dev
 ```
 
 `npm run dev` starts Vite and opens the Tauri desktop window. Use `npm run dev:web` when only the browser frontend is needed.
+
+Copy `.env.example` to `.env.local` and provide the Supabase URL and publishable key to enable the workshop. Without them, the local editor remains fully usable. See [docs/workshop-deployment.md](docs/workshop-deployment.md) for backend and OAuth setup.
 
 ## Build and Package
 
@@ -43,8 +45,10 @@ src/app/                    application shell and global styles
 src/features/pvc/domain/    geometry, parsing, statistics, and types
 src/features/pvc/application/ editor state, history, and storage
 src/features/pvc/ui/        PVC editor and SVG rendering components
+src/features/workshop/      workshop domain, Supabase API, and community pages
 src/shared/                 platform adapters and legacy data migration
 src-tauri/                  Rust entry point, permissions, and app metadata
+supabase/                   database migration and Edge Functions
 public/                     web assets and product icon
 tests/                      Playwright browser workflows and fixtures
 ```

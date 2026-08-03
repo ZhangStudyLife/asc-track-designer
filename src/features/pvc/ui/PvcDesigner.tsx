@@ -19,6 +19,7 @@ import {
 import { rotateTrackPieceSelection } from '../domain/selectionRotation'
 import { parseTrackCode } from '../domain/parser'
 import { calculateTrackStats as calculateStatsForPieces } from '../domain/stats'
+import { PVC_DESIGN_BOUNDS } from '../domain/constants'
 import { getPvcPieces, usePvcEditorStore } from '../application/editorStore'
 import {
   DEFAULT_PVC_EDITOR_SETTINGS,
@@ -40,7 +41,7 @@ import { isTauriRuntime } from '../../../shared/platform/runtime'
 import { confirmUpdateStartup } from '../../../shared/platform/updater'
 import { initializeStorageSchema } from '../../../shared/storage/schema'
 
-const DESIGN_BOUNDS = { width: 3200, height: 1600, x: -1600, y: -800 }
+const DESIGN_BOUNDS = PVC_DESIGN_BOUNDS
 const ZOOM_ANIMATION_MS = 100
 
 function isEditableTarget(target: EventTarget | null) {
@@ -56,7 +57,7 @@ function getContrastTextColor(background: string) {
   return luminance > 0.55 ? '#1f2937' : '#f8fafc'
 }
 
-export default function PvcDesigner() {
+export default function PvcDesigner({ embedded = false }: { embedded?: boolean }) {
   const pieceCount = usePvcEditorStore((state) => state.pieceIds.length)
   const setPieces = usePvcEditorStore((state) => state.setPieces)
   // 拖动状态
@@ -243,6 +244,9 @@ export default function PvcDesigner() {
   const [statusMessage, setStatusMessage] = React.useState('')
   const statusTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const projectDirtyRef = React.useRef(false)
+  const hydratingProjectRef = React.useRef(true)
+  const autoSaveStateReadyRef = React.useRef(false)
   const [currentArchiveName, setCurrentArchiveName] = React.useState('未命名项目')
   const [archives, setArchives] = React.useState<string[]>([])
   const [showArchiveDialog, setShowArchiveDialog] = React.useState(false)
@@ -299,7 +303,7 @@ export default function PvcDesigner() {
 
   const scheduleAutoSave = React.useCallback(() => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
-    if (!isClientRef.current || getPvcPieces().length === 0) return
+    if (!isClientRef.current || !projectDirtyRef.current) return
 
     autoSaveTimerRef.current = setTimeout(() => {
       const projectData = {
@@ -309,21 +313,37 @@ export default function PvcDesigner() {
         timestamp: new Date().toISOString(),
       }
       localStorage.setItem('currentTrackProject', JSON.stringify(projectData))
+      projectDirtyRef.current = false
       showStatusMessage('鑷姩淇濆瓨瀹屾垚')
       autoSaveTimerRef.current = null
     }, 5000)
   }, [showStatusMessage])
 
-  React.useEffect(() => usePvcEditorStore.subscribe(
-    (state) => state.revision,
-    () => {
-      piecesRef.current = getPvcPieces()
-      scheduleAutoSave()
-    },
-    { fireImmediately: true },
-  ), [scheduleAutoSave])
+  React.useEffect(() => {
+    let initialized = false
+    return usePvcEditorStore.subscribe(
+      (state) => state.revision,
+      () => {
+        piecesRef.current = getPvcPieces()
+        if (!initialized) {
+          initialized = true
+          return
+        }
+        if (hydratingProjectRef.current) return
+        projectDirtyRef.current = true
+        scheduleAutoSave()
+      },
+      { fireImmediately: true },
+    )
+  }, [scheduleAutoSave])
 
   React.useEffect(() => {
+    if (!isClient) return
+    if (!autoSaveStateReadyRef.current) {
+      autoSaveStateReadyRef.current = true
+      return
+    }
+    projectDirtyRef.current = true
     scheduleAutoSave()
   }, [isClient, viewBox, currentArchiveName, scheduleAutoSave])
 
@@ -371,6 +391,7 @@ export default function PvcDesigner() {
   
   // 客户端水合后加载localStorage数据
   React.useEffect(() => {
+    hydratingProjectRef.current = true
     setIsClient(true)
     try {
       const saved = localStorage.getItem('trackSizes')
@@ -411,6 +432,7 @@ export default function PvcDesigner() {
     } catch {
       setShowOnboarding(true)
     } finally {
+      hydratingProjectRef.current = false
       void confirmUpdateStartup().catch(() => {
         // A failed confirmation leaves the old EXE backup available for recovery.
       })
@@ -435,6 +457,10 @@ export default function PvcDesigner() {
     if (!isClientRef.current) return false
 
     try {
+      if (!projectDirtyRef.current) {
+        flushPiecesHistory()
+        return true
+      }
       const projectData = {
         name: currentArchiveNameRef.current,
         pieces: getPvcPieces(),
@@ -442,12 +468,17 @@ export default function PvcDesigner() {
         timestamp: new Date().toISOString(),
       }
       localStorage.setItem('currentTrackProject', JSON.stringify(projectData))
+      projectDirtyRef.current = false
       flushPiecesHistory()
       return true
     } catch {
       return false
     }
   }, [])
+
+  React.useEffect(() => () => {
+    persistCurrentProjectNow()
+  }, [persistCurrentProjectNow])
 
   const updater = useUpdater({
     onBeforeInstall: persistCurrentProjectNow,
@@ -1583,7 +1614,7 @@ export default function PvcDesigner() {
 
   return React.createElement('div', {
     style: { 
-      height: '100vh', 
+      height: embedded ? '100%' : '100vh',
       display: 'flex', 
       flexDirection: 'column',
       fontFamily: 'Inter, Microsoft YaHei, Arial, sans-serif',

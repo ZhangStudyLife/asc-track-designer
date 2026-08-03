@@ -41,7 +41,7 @@ test('shows version and safe project links in settings on the web', async ({ pag
   await page.getByRole('button', { name: '打开编辑器设置' }).click()
   const dialog = page.getByRole('dialog', { name: '编辑器设置' })
 
-  await expect(dialog.getByRole('region', { name: '关于' })).toContainText('v2.2.0')
+  await expect(dialog.getByRole('region', { name: '关于' })).toContainText('v2.3.0')
   await expect(dialog.getByRole('link', { name: '打开项目仓库' })).toHaveAttribute(
     'href',
     'https://github.com/ZhangStudyLife/asc-track-designer',

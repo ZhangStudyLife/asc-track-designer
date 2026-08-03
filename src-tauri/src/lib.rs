@@ -3,6 +3,8 @@
 use std::{fs, path::PathBuf};
 
 mod updater;
+mod workshop_credentials;
+mod workshop_oauth;
 
 const WEBVIEW2_LOADER: &[u8] = include_bytes!("../vendor/webview2-com-sys/x64/WebView2Loader.dll");
 
@@ -132,7 +134,9 @@ pub fn run() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .manage(workshop_oauth::OAuthCallbackState::default())
         .invoke_handler(tauri::generate_handler![
             read_legacy_migration,
             mark_legacy_migration_imported,
@@ -140,6 +144,11 @@ pub fn run() {
             updater::download_update,
             updater::install_update,
             updater::confirm_update_startup,
+            workshop_credentials::workshop_secure_get,
+            workshop_credentials::workshop_secure_set,
+            workshop_credentials::workshop_secure_remove,
+            workshop_oauth::start_workshop_oauth_callback,
+            workshop_oauth::wait_for_workshop_oauth_callback,
         ])
         .run(tauri::generate_context!());
 

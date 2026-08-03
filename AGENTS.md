@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-The Vite entry is `src/main.tsx`; `src/app/` contains the application shell and global styles. PVC behavior is grouped under `src/features/pvc/`: pure geometry, parsing, statistics, and types live in `domain/`; Zustand state, history, and storage live in `application/`; React and SVG components live in `ui/`. Shared browser/Tauri adapters are under `src/shared/`. The Rust desktop shell, permissions, icon, and Tauri configuration are in `src-tauri/`; `src-tauri/vendor/` contains the narrow WebView2 loader patch required by the single-file GNU build. Static web assets are in `public/`, and Playwright workflows are in `tests/e2e/`.
+The Vite entry is `src/main.tsx`; `src/app/` contains the application shell and global styles. PVC behavior is grouped under `src/features/pvc/`: pure geometry, parsing, statistics, and types live in `domain/`; Zustand state, history, and storage live in `application/`; React and SVG components live in `ui/`. The optional community UI and Supabase client are under `src/features/workshop/`; database migrations and Edge Functions are under `supabase/`. Shared browser/Tauri adapters are under `src/shared/`. The Rust desktop shell, permissions, icon, and Tauri configuration are in `src-tauri/`; `src-tauri/vendor/` contains the narrow WebView2 loader patch required by the single-file GNU build. Static web assets are in `public/`, and Playwright workflows are in `tests/e2e/`.
 
 ## Build, Test, and Development Commands
 
@@ -10,7 +10,7 @@ The Vite entry is `src/main.tsx`; `src/app/` contains the application shell and 
 - `npm run dev`: start Vite and open the Tauri desktop app.
 - `npm run dev:web`: run only the browser version on `127.0.0.1:5173`.
 - `npm run build`: type-check and build static assets into `dist/`.
-- `npm run dist:win`: produce `release/ASC.2.0.2.exe` as one portable file.
+- `npm run dist:win`: produce `release/ASC.<version>.exe` as one portable file.
 - `npm run lint`: lint TypeScript and TSX files.
 - `npm run test:run`: run the Vitest suite once.
 - `npm run test:e2e`: run Playwright PVC workflows.

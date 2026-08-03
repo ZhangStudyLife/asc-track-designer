@@ -1,0 +1,13 @@
+project_id = "asc-track-designer"
+
+[functions.publish-track]
+verify_jwt = true
+
+[functions.download-track]
+verify_jwt = true
+
+[functions.moderate-content]
+verify_jwt = true
+
+[functions.cleanup-deleted-tracks]
+verify_jwt = false
